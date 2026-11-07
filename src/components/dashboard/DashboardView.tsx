@@ -6,12 +6,14 @@ import {
   FileQuestion,
   ReceiptText,
   UsersRound,
+  Boxes,
 } from "lucide-react";
 import Link from "next/link";
 import { Suspense, useMemo } from "react";
 import { useAuth } from "@/context/AuthProvider";
 import { useDocuments } from "@/context/DocumentsProvider";
 import { useClients } from "@/context/FirestoreDataProvider";
+import { useArticles } from "@/context/FirestoreDataProvider";
 import { DashboardInsights } from "@/components/dashboard/DashboardInsights";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { Card } from "@/components/ui/Card";
@@ -23,6 +25,8 @@ import { formatSafeDate } from "@/lib/formatSafeDate";
 import { documentTypeLabels } from "@/lib/documentLabels";
 import { documentTimestamp } from "@/lib/documentTimestamp";
 import type { Document } from "@/types";
+import { getStockStatut } from "@/lib/stock";
+import { ReceivablesSummaryCard } from "@/components/recouvrement/ReceivablesSummaryCard";
 
 function greetingForHour(hour: number): string {
   if (hour < 12) return "Bonjour";
@@ -33,6 +37,7 @@ function greetingForHour(hour: number): string {
 function DashboardContent() {
   const { documents, loading: documentsLoading, error: documentsError } = useDocuments();
   const { items: clients, loading: clientsLoading, error: clientsError } = useClients();
+  const { items: articles, loading: articlesLoading, error: articlesError } = useArticles();
   const { profile, role, user } = useAuth();
   const stats = useMemo(() => getDashboardStats(clients, documents), [clients, documents]);
   const revenueNow = stats.monthlyRevenue[stats.monthlyRevenue.length - 1]?.amount ?? 0;
@@ -111,17 +116,17 @@ function DashboardContent() {
 
   return (
     <div className="space-y-7">
-      {documentsError || clientsError ? (
+      {documentsError || clientsError || articlesError ? (
         <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-          {documentsError ?? clientsError}
+          {documentsError ?? clientsError ?? articlesError}
         </p>
       ) : null}
-      {documentsLoading || clientsLoading ? (
+      {documentsLoading || clientsLoading || articlesLoading ? (
         <p role="status" className="rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-600 shadow-card">
           Chargement des indicateurs…
         </p>
       ) : null}
-      {!documentsLoading && !clientsLoading && !documents.length && !clients.length ? (
+      {!documentsLoading && !clientsLoading && !articlesLoading && !documents.length && !clients.length ? (
         <p className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
           Les collections Firestore sont vides. Un propriétaire peut importer
           les données de démonstration depuis les paramètres.
@@ -189,6 +194,46 @@ function DashboardContent() {
         role={role ?? "commercial"}
         currentUid={user?.uid}
       />
+
+      <ReceivablesSummaryCard role={role} />
+
+      {role === "owner" || role === "dg" ? (
+        <Card className="min-w-0 overflow-hidden">
+          <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-5 sm:px-6">
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-amber-800">
+                <Boxes size={19} aria-hidden="true" />
+              </span>
+              <div>
+                <h2 className="font-display font-bold text-slate-900">Stock à réapprovisionner</h2>
+                <p className="mt-1 text-sm text-slate-600">Les cinq niveaux les plus critiques</p>
+              </div>
+            </div>
+            <Link href="/stock" className="text-sm font-semibold text-blue-700 hover:underline">Voir le stock</Link>
+          </div>
+          {articles.filter((article) => article.type === "produit" && getStockStatut(article) !== "ok").length ? (
+            <ul className="divide-y divide-slate-100">
+              {articles
+                .filter((article) => article.type === "produit" && getStockStatut(article) !== "ok")
+                .sort((left, right) => (left.stockQte ?? 0) - (right.stockQte ?? 0))
+                .slice(0, 5)
+                .map((article) => (
+                  <li key={article.id} className="flex min-w-0 items-center justify-between gap-4 px-5 py-3.5 sm:px-6">
+                    <Link href={`/stock/${article.id}`} className="min-w-0">
+                      <span className="block truncate text-sm font-semibold text-slate-900">{article.designation}</span>
+                      <span className="mt-0.5 block break-all font-mono text-xs text-slate-500">{article.reference}</span>
+                    </Link>
+                    <span className="shrink-0 text-right text-sm tabular-nums text-slate-700">
+                      {article.stockQte ?? 0} / {article.seuilAlerte ?? 0} {article.unite}
+                    </span>
+                  </li>
+                ))}
+            </ul>
+          ) : (
+            <p className="px-5 py-8 text-center text-sm text-slate-600">Tous les produits sont au-dessus de leur seuil.</p>
+          )}
+        </Card>
+      ) : null}
 
       <Card className="min-w-0 overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-5 sm:px-6">

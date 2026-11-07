@@ -185,6 +185,9 @@ function parseIntervention(id: string, value: unknown): Intervention | null {
     duree: value.duree,
     signatureClient: value.signatureClient,
     nomSignataire: value.nomSignataire,
+    ...(typeof value.stockApplied === "boolean"
+      ? { stockApplied: value.stockApplied }
+      : {}),
     ...(text(value.descriptionProbleme) ? { descriptionProbleme: value.descriptionProbleme } : {}),
     ...(text(value.createdBy) ? { createdBy: value.createdBy } : {}),
     ...(value.createdAt ? { createdAt: dateInput(value.createdAt) ?? undefined } : {}),
@@ -199,13 +202,14 @@ function useLiveCollection<T>(
   name: "contrats" | "ascenseurs" | "interventions",
   parse: (id: string, value: unknown) => T | null,
 ): LiveCollection<T> {
-  const { user } = useAuth();
+  const { user, status } = useAuth();
+  const readyUid = status === "ready" ? user?.uid ?? null : null;
   const [state, setState] = useState<{ uid: string | null; value: LiveCollection<T> }>({
     uid: null,
     value: { items: [], loading: true, error: null },
   });
   useEffect(() => {
-    if (!user) return;
+    if (!readyUid) return;
     let active = true;
     let unsubscribe = () => {};
     try {
@@ -216,33 +220,33 @@ function useLiveCollection<T>(
           const parsed = snapshot.docs.map((entry) => parse(entry.id, entry.data()));
           if (parsed.some((entry) => entry === null)) {
             setState({
-              uid: user.uid,
+              uid: readyUid,
               value: { items: [], loading: false, error: `Les données de « ${name} » sont invalides.` },
             });
             return;
           }
           setState({
-            uid: user.uid,
+            uid: readyUid,
             value: { items: parsed.filter((entry): entry is T => entry !== null), loading: false, error: null },
           });
         },
         (error) => {
-          if (active) setState({ uid: user.uid, value: { items: [], loading: false, error: firestoreErrorMessage(error) } });
+          if (active) setState({ uid: readyUid, value: { items: [], loading: false, error: firestoreErrorMessage(error) } });
         },
       );
     } catch (error) {
       const message = firestoreErrorMessage(error);
       window.setTimeout(() => {
-        if (active) setState({ uid: user.uid, value: { items: [], loading: false, error: message } });
+        if (active) setState({ uid: readyUid, value: { items: [], loading: false, error: message } });
       }, 0);
     }
     return () => {
       active = false;
       unsubscribe();
     };
-  }, [name, parse, user]);
-  if (!user) return { items: [], loading: false, error: null };
-  if (state.uid !== user.uid) return { items: [], loading: true, error: null };
+  }, [name, parse, readyUid]);
+  if (!readyUid) return { items: [], loading: false, error: null };
+  if (state.uid !== readyUid) return { items: [], loading: true, error: null };
   return state.value;
 }
 

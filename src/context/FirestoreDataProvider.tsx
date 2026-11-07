@@ -54,7 +54,27 @@ function parseClient(id: string, source: unknown): Client | null {
   ) {
     return null;
   }
-  return { id, nom: value.nom, adresse: value.adresse, telephone: value.telephone, ice: value.ice };
+  return {
+    id,
+    nom: value.nom,
+    adresse: value.adresse,
+    telephone: value.telephone,
+    ice: value.ice,
+    ...(typeof value.email === "string" ? { email: value.email } : {}),
+    ...(typeof value.delaiPaiementJours === "number" &&
+    Number.isInteger(value.delaiPaiementJours) &&
+    value.delaiPaiementJours >= 0
+      ? { delaiPaiementJours: value.delaiPaiementJours }
+      : {}),
+    ...(typeof value.limiteCredit === "number" &&
+    Number.isFinite(value.limiteCredit) &&
+    value.limiteCredit >= 0
+      ? { limiteCredit: value.limiteCredit }
+      : {}),
+    ...(typeof value.notesRecouvrement === "string"
+      ? { notesRecouvrement: value.notesRecouvrement }
+      : {}),
+  };
 }
 
 function parseArticle(id: string, source: unknown): Article | null {
@@ -69,12 +89,38 @@ function parseArticle(id: string, source: unknown): Article | null {
   ];
   const category = categories.find((item) => item === value.categorie);
   if (
+    value.type !== undefined &&
+    value.type !== "produit" &&
+    value.type !== "service"
+  ) {
+    return null;
+  }
+  const type =
+    value.type === "service" || category === "Services"
+      ? "service"
+      : "produit";
+  if (
     typeof value.reference !== "string" ||
     typeof value.designation !== "string" ||
     typeof value.unite !== "string" ||
     typeof value.prixUnitaireHT !== "number" ||
     !Number.isFinite(value.prixUnitaireHT) ||
     !category
+  ) {
+    return null;
+  }
+  if (
+    type === "produit" &&
+    ((value.stockQte !== undefined &&
+      (typeof value.stockQte !== "number" ||
+        !Number.isFinite(value.stockQte) ||
+        value.stockQte < 0)) ||
+      (value.seuilAlerte !== undefined &&
+        (typeof value.seuilAlerte !== "number" ||
+          !Number.isFinite(value.seuilAlerte) ||
+          value.seuilAlerte < 0)) ||
+      (value.emplacement !== undefined &&
+        typeof value.emplacement !== "string"))
   ) {
     return null;
   }
@@ -85,12 +131,22 @@ function parseArticle(id: string, source: unknown): Article | null {
     categorie: category,
     prixUnitaireHT: value.prixUnitaireHT,
     unite: value.unite,
+    type,
+    actif: typeof value.actif === "boolean" ? value.actif : true,
   };
-  if (value.type === "produit" || value.type === "service") item.type = value.type;
-  if (typeof value.stockQte === "number") item.stockQte = value.stockQte;
-  if (typeof value.seuilAlerte === "number") item.seuilAlerte = value.seuilAlerte;
+  if (type === "produit" && typeof value.stockQte === "number") {
+    item.stockQte = value.stockQte;
+  }
+  if (type === "produit" && typeof value.seuilAlerte === "number") {
+    item.seuilAlerte = value.seuilAlerte;
+  }
   if (typeof value.prixVenteHT === "number") item.prixVenteHT = value.prixVenteHT;
-  if (typeof value.emplacement === "string") item.emplacement = value.emplacement;
+  if (type === "produit" && typeof value.emplacement === "string") {
+    item.emplacement = value.emplacement;
+  }
+  if (type === "produit" && typeof value.lastStockMovementId === "string") {
+    item.lastStockMovementId = value.lastStockMovementId;
+  }
   return item;
 }
 
@@ -166,9 +222,10 @@ function useCollection<T>(
 }
 
 export function FirestoreDataProvider({ children }: { children: ReactNode }) {
-  const { user } = useAuth();
-  const clientState = useCollection("clients", parseClient, user?.uid ?? null);
-  const articleState = useCollection("articles", parseArticle, user?.uid ?? null);
+  const { user, status } = useAuth();
+  const readyUid = status === "ready" ? user?.uid ?? null : null;
+  const clientState = useCollection("clients", parseClient, readyUid);
+  const articleState = useCollection("articles", parseArticle, readyUid);
   const value = useMemo(
     () => ({ clients: clientState, articles: articleState }),
     [clientState, articleState],

@@ -17,6 +17,7 @@ import { documentTimestamp } from "@/lib/documentTimestamp";
 import { formatSafeDate } from "@/lib/formatSafeDate";
 import { normalizeSearch } from "@/lib/normalizeSearch";
 import { can } from "@/lib/permissions";
+import { StockInsufficientError } from "@/lib/stock";
 import type { Intervention, PieceIntervention } from "@/types";
 
 type TabId = "a_planifier" | "planifiees" | "terminees";
@@ -50,6 +51,7 @@ export function InterventionDirectory() {
   const [quantity, setQuantity] = useState("1");
   const [parts, setParts] = useState<PieceIntervention[]>([]);
   const [submitError, setSubmitError] = useState("");
+  const [stockShortage, setStockShortage] = useState("");
   const [saving, setSaving] = useState(false);
   const [confirmResume, setConfirmResume] = useState(false);
   const canEdit = can(role, "update", "interventions");
@@ -112,6 +114,7 @@ export function InterventionDirectory() {
     setResumeAfterBreakdown(false);
     setParts([]);
     setSubmitError("");
+    setStockShortage("");
   }
 
   function addPart() {
@@ -123,7 +126,7 @@ export function InterventionDirectory() {
     setQuantity("1");
   }
 
-  async function saveClose() {
+  async function saveClose(deductStock = true) {
     if (!closing) return;
     const input: CloseInterventionInput = {
       rapport: report.trim(),
@@ -143,11 +146,22 @@ export function InterventionDirectory() {
     setSaving(true);
     setSubmitError("");
     try {
-      await closeIntervention(closing, input, resumeAfterBreakdown);
+      await closeIntervention(
+        closing,
+        input,
+        resumeAfterBreakdown,
+        profile.uid,
+        profile.nom,
+        deductStock,
+      );
       showToast("Intervention clôturée", closing.numero);
       setClosing(null);
     } catch (closeError) {
-      setSubmitError(closeError instanceof Error ? closeError.message : "La clôture de l’intervention a échoué.");
+      if (closeError instanceof StockInsufficientError && deductStock) {
+        setStockShortage(closeError.message);
+      } else {
+        setSubmitError(closeError instanceof Error ? closeError.message : "La clôture de l’intervention a échoué.");
+      }
     } finally {
       setSaving(false);
       setConfirmResume(false);
@@ -187,6 +201,20 @@ export function InterventionDirectory() {
       <Modal open={Boolean(closing)} title={`Clôturer ${closing?.numero ?? "l’intervention"}`} description="Saisissez le rapport technique, la durée et les pièces utilisées." onClose={() => { if (!saving) setClosing(null); }} className="max-w-2xl">
         {closing ? <div className="space-y-4">
           {submitError ? <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{submitError}</p> : null}
+          {stockShortage ? (
+            <div role="alert" className="space-y-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
+              <p>{stockShortage}</p>
+              <p>Choisissez si vous souhaitez clôturer cette intervention sans décompter les pièces.</p>
+              <div className="flex flex-wrap justify-end gap-2">
+                <Button variant="secondary" onClick={() => setStockShortage("")}>
+                  Annuler
+                </Button>
+                <Button loading={saving} onClick={() => void saveClose(false)}>
+                  Clôturer sans décompter
+                </Button>
+              </div>
+            </div>
+          ) : null}
           <Field id="close-report" label="Rapport des travaux" required><Textarea id="close-report" value={report} onChange={(event) => setReport(event.target.value)} /></Field>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field id="close-duration" label="Durée (minutes)" required><Input id="close-duration" type="number" min="1" value={duration} onChange={(event) => setDuration(event.target.value)} /></Field>

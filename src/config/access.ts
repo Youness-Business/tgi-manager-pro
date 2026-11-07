@@ -15,7 +15,7 @@ export const accessWhitelist: readonly AllowedAccount[] = [
     roleLabel: "Propriétaire",
   },
   {
-    email: "yl.younesslaaassas@gmail.com",
+    email: "yl.younesslaassas@gmail.com",
     nom: "Youness Laassas",
     role: "commercial",
     roleLabel: "Commercial",
@@ -28,11 +28,33 @@ export const accessWhitelist: readonly AllowedAccount[] = [
   },
 ];
 
+export function normalizeEmail(email: string | null | undefined): string | null {
+  const normalized = email?.trim().toLowerCase();
+  return normalized || null;
+}
+
+export function getRoleForEmail(
+  email: string | null | undefined,
+  emailVerified: boolean,
+): UserRole | null {
+  if (!emailVerified) return null;
+  const normalizedEmail = normalizeEmail(email);
+  if (!normalizedEmail) return null;
+  return accessWhitelist.find((account) => account.email === normalizedEmail)?.role ?? null;
+}
+
+export function isEmailAllowed(
+  email: string | null | undefined,
+  emailVerified: boolean,
+): boolean {
+  return getRoleForEmail(email, emailVerified) !== null;
+}
+
 export function allowedAccountForEmail(
   email: string | null | undefined,
 ): AllowedAccount | null {
-  if (!email) return null;
-  const normalizedEmail = email.trim().toLocaleLowerCase("en-US");
+  const normalizedEmail = normalizeEmail(email);
+  if (!normalizedEmail) return null;
   return (
     accessWhitelist.find((account) => account.email === normalizedEmail) ?? null
   );

@@ -1,15 +1,21 @@
 "use client";
 
-import { BadgeCheck, Search as SearchIcon } from "lucide-react";
+import { BadgeCheck, PackagePlus, Pencil, Search as SearchIcon } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
+import { Button } from "@/components/ui/primitives";
+import { ArticleEditorDialog } from "@/components/catalogue/ArticleEditorDialog";
+import { StockStatusBadge } from "@/components/stock/StockStatusBadge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { SearchInput } from "@/components/ui/SearchInput";
 import { formatMoney } from "@/lib/formatMoney";
 import { normalizeSearch } from "@/lib/normalizeSearch";
 import type { Article, ArticleCategory } from "@/types";
 import { useArticles } from "@/context/FirestoreDataProvider";
+import { useArticlesCouts } from "@/context/StockDataProvider";
+import { useAuth } from "@/context/AuthProvider";
+import { can } from "@/lib/permissions";
 
 const categories: ArticleCategory[] = [
   "Moteurs",
@@ -29,6 +35,8 @@ export function CatalogueBrowser({
   initialCategory,
 }: CatalogueBrowserProps) {
   const { items: articles, loading, error } = useArticles();
+  const costs = useArticlesCouts();
+  const { role } = useAuth();
   const [query, setQuery] = useState(initialQuery);
   const [category, setCategory] = useState(
     categories.find((item) => item === initialCategory) ?? "",
@@ -36,8 +44,12 @@ export function CatalogueBrowser({
   const [priceDirection, setPriceDirection] = useState<
     "ascending" | "descending"
   >("ascending");
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editingArticle, setEditingArticle] = useState<Article | null>(null);
   const router = useRouter();
   const pathname = usePathname();
+  const canManage = can(role, "create", "catalogue");
+  const canReadCosts = can(role, "readPurchasePrice", "catalogue");
 
   function updateUrl(nextQuery: string, nextCategory: string) {
     const params = new URLSearchParams(window.location.search);
@@ -141,6 +153,41 @@ export function CatalogueBrowser({
         </span>
       ),
     },
+    {
+      id: "stock",
+      header: "Stock",
+      render: (article) =>
+        article.type === "produit" ? (
+          <div className="space-y-1">
+            <StockStatusBadge article={article} />
+            <p className="text-xs tabular-nums text-slate-600">
+              {article.stockQte ?? 0} {article.unite}
+            </p>
+          </div>
+        ) : (
+          <span className="text-xs text-slate-500">Sans stock</span>
+        ),
+    },
+    {
+      id: "actions",
+      header: "Actions",
+      render: (article) =>
+        can(role, "update", "catalogue") ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            aria-label={`Modifier ${article.designation}`}
+            onClick={() => {
+              setEditingArticle(article);
+              setEditorOpen(true);
+            }}
+          >
+            <Pencil size={15} aria-hidden="true" />
+            Modifier
+          </Button>
+        ) : null,
+    },
   ];
 
   return (
@@ -148,6 +195,11 @@ export function CatalogueBrowser({
       {error ? (
         <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
           {error}
+        </p>
+      ) : null}
+      {canReadCosts && costs.error ? (
+        <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          {costs.error}
         </p>
       ) : null}
       {loading ? (
@@ -184,6 +236,17 @@ export function CatalogueBrowser({
             ))}
           </select>
         </div>
+        {canManage ? (
+          <Button
+            type="button"
+            onClick={() => {
+              setEditingArticle(null);
+              setEditorOpen(true);
+            }}
+          >
+            <PackagePlus size={17} aria-hidden="true" /> Nouvel article
+          </Button>
+        ) : null}
         <p
           aria-live="polite"
           className="text-sm text-slate-600 sm:pb-3 sm:text-right"
@@ -241,6 +304,25 @@ export function CatalogueBrowser({
               </button>
             ) : undefined
           }
+        />
+      ) : null}
+      {editorOpen && canReadCosts && costs.loading ? (
+        <p role="status" className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
+          Chargement des coûts confidentiels…
+        </p>
+      ) : null}
+      {editorOpen &&
+      (!canReadCosts || (!costs.loading && !costs.error)) ? (
+        <ArticleEditorDialog
+          key={editingArticle?.id ?? "new-article"}
+          open={editorOpen}
+          article={editingArticle}
+          costs={costs.items}
+          articles={articles}
+          onClose={() => {
+            setEditorOpen(false);
+            setEditingArticle(null);
+          }}
         />
       ) : null}
     </div>

@@ -25,12 +25,15 @@ type DocumentLayoutProps = {
   contentAfterTable?: ReactNode;
   showDefaultFooter?: boolean;
   showPrintButton?: boolean;
+  showLineItems?: boolean;
+  showTotals?: boolean;
 };
 
 const paymentLabels: Record<PaymentMethod, string> = {
   especes: "Espèces",
   virement: "Virement",
   cheque: "Chèque",
+  effet: "Effet de commerce",
 };
 
 const documentTitles = {
@@ -45,6 +48,8 @@ const statusClasses: Record<DocumentStatus, string> = {
     "bg-amber-100 text-amber-800 print:bg-amber-100 print:text-amber-800",
   paye: "bg-emerald-100 text-emerald-800 print:bg-emerald-100 print:text-emerald-800",
   annule: "bg-slate-100 text-slate-700 print:bg-slate-100 print:text-slate-700",
+  partiel:
+    "bg-blue-100 text-blue-800 print:bg-blue-100 print:text-blue-800",
 };
 
 const currencyFormatter = new Intl.NumberFormat("fr-MA", {
@@ -100,6 +105,8 @@ export function DocumentLayout({
   contentAfterTable,
   showDefaultFooter = true,
   showPrintButton = true,
+  showLineItems = true,
+  showTotals = true,
 }: DocumentLayoutProps) {
   const { company, error: companyError } = useCompanySettings();
   const totals = computeDiscountedTotals(document.lignes, remisePct);
@@ -188,7 +195,7 @@ export function DocumentLayout({
         </div>
       </section>
 
-      <div className="overflow-x-auto print:overflow-visible">
+      {showLineItems ? <div className="overflow-x-auto print:overflow-visible">
         <table className="w-full min-w-[560px] border-collapse text-sm print:min-w-0">
           <thead className="table-header-group">
             <tr className="border-b border-slate-300 bg-slate-100 text-left text-xs uppercase tracking-wide text-slate-600 print:border-slate-300 print:bg-slate-100 print:text-slate-600">
@@ -203,7 +210,7 @@ export function DocumentLayout({
               <th scope="col" className="px-3 py-3 text-right">
                 Qté
               </th>
-              {!isDelivery ? (
+              {!isDelivery && showTotals ? (
                 <>
                   <th scope="col" className="px-3 py-3 text-right">
                     Prix unitaire HT
@@ -249,7 +256,7 @@ export function DocumentLayout({
             ))}
           </tbody>
         </table>
-      </div>
+      </div> : null}
 
       {contentAfterTable}
 

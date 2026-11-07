@@ -8,6 +8,7 @@ import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { useDocuments } from "@/context/DocumentsProvider";
+import { usePaiements } from "@/context/RecouvrementDataProvider";
 import { useClients } from "@/context/FirestoreDataProvider";
 import { computeDiscountedTotals } from "@/lib/computeDiscountedTotals";
 import { formatMoney } from "@/lib/formatMoney";
@@ -16,6 +17,7 @@ import { documentTypeLabels } from "@/lib/documentLabels";
 import { documentStatusLabels } from "@/lib/documentLabels";
 import { documentTimestamp } from "@/lib/documentTimestamp";
 import { normalizeSearch } from "@/lib/normalizeSearch";
+import { getDocumentStatut } from "@/lib/recouvrement";
 import type { Document, DocumentStatus, DocumentType } from "@/types";
 
 const validTypes: DocumentType[] = [
@@ -24,7 +26,7 @@ const validTypes: DocumentType[] = [
   "recu",
   "bon_livraison",
 ];
-const validStatuses: DocumentStatus[] = ["en_attente", "paye", "annule"];
+const validStatuses: DocumentStatus[] = ["en_attente", "partiel", "paye", "annule"];
 type DocumentDirectoryProps = {
   initialQuery: string;
   initialType: string;
@@ -37,6 +39,7 @@ export function DocumentDirectory({
   initialStatus,
 }: DocumentDirectoryProps) {
   const { documents, loading, error } = useDocuments();
+  const { items: payments } = usePaiements();
   const { items: clients, error: clientsError } = useClients();
   const [query, setQuery] = useState(initialQuery);
   const [type, setType] = useState(
@@ -71,7 +74,10 @@ export function DocumentDirectory({
               normalizedQuery,
             )) &&
           (!type || document.type === type) &&
-          (!status || document.statut === status)
+          (!status ||
+            (document.type === "facture"
+              ? getDocumentStatut(document, payments)
+              : document.statut) === status)
         );
       })
       .sort(
@@ -79,7 +85,7 @@ export function DocumentDirectory({
           documentTimestamp(right.dateCreation) -
           documentTimestamp(left.dateCreation),
       );
-  }, [clients, documents, query, status, type]);
+  }, [clients, documents, payments, query, status, type]);
 
   const columns: DataTableColumn<Document>[] = [
     {
@@ -134,7 +140,15 @@ export function DocumentDirectory({
     {
       id: "statut",
       header: "Statut",
-      render: (document) => <StatusBadge status={document.statut} />,
+      render: (document) => (
+        <StatusBadge
+          status={
+            document.type === "facture"
+              ? getDocumentStatut(document, payments)
+              : document.statut
+          }
+        />
+      ),
     },
   ];
 

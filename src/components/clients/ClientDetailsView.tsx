@@ -14,17 +14,18 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { useDocuments } from "@/context/DocumentsProvider";
 import { useClients } from "@/context/FirestoreDataProvider";
 import { useAscenseurs, useContrats } from "@/context/OperationsDataProvider";
+import { useCreances } from "@/context/RecouvrementDataProvider";
 import { computeDiscountedTotals } from "@/lib/computeDiscountedTotals";
 import {
   documentsByClient,
   totalFacture,
-  totalImpaye,
 } from "@/lib/clientStats";
 import { formatMoney } from "@/lib/formatMoney";
 import { formatSafeDate } from "@/lib/formatSafeDate";
 import { documentTypeLabels } from "@/lib/documentLabels";
 import { documentTimestamp } from "@/lib/documentTimestamp";
 import { getContratStatut } from "@/lib/contractDates";
+import { computeSolde, getRetardJours } from "@/lib/recouvrement";
 import type { Document } from "@/types";
 
 export function ClientDetailsView({ id }: { id: string }) {
@@ -32,6 +33,7 @@ export function ClientDetailsView({ id }: { id: string }) {
   const { items: clients, loading, error } = useClients();
   const { items: elevators, loading: elevatorsLoading, error: elevatorsError } = useAscenseurs();
   const { items: contracts, loading: contractsLoading, error: contractsError } = useContrats();
+  const { documents: invoices, paiements, relances, loading: receivablesLoading, error: receivablesError } = useCreances();
   const [selectedTab, setSelectedTab] = useState("documents");
   const client = clients.find((item) => item.id === id);
   const clientDocuments = useMemo(
@@ -45,6 +47,10 @@ export function ClientDetailsView({ id }: { id: string }) {
   );
   const clientElevators = useMemo(() => elevators.filter((item) => item.clientId === id), [elevators, id]);
   const clientContracts = useMemo(() => contracts.filter((item) => item.clientId === id), [contracts, id]);
+  const clientInvoices = invoices.filter((invoice) => invoice.clientId === id);
+  const clientBalance = clientInvoices.reduce((sum, invoice) => sum + computeSolde(invoice, paiements), 0);
+  const overdueBalance = clientInvoices.reduce((sum, invoice) => (getRetardJours(invoice.dateEcheance) ?? 0) > 0 ? sum + computeSolde(invoice, paiements) : sum, 0);
+  const latestReminder = [...relances].filter((reminder) => reminder.clientId === id).sort((a, b) => dateValue(b.date) - dateValue(a.date))[0];
   if (!client && !loading && !error) notFound();
   if (!client) {
     return (
@@ -161,15 +167,30 @@ export function ClientDetailsView({ id }: { id: string }) {
         </dl>
       </Card>
 
-      {error || documentsError || elevatorsError || contractsError ? (
+      {error || documentsError || elevatorsError || contractsError || receivablesError ? (
         <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-          {error ?? documentsError ?? elevatorsError ?? contractsError}
+          {error ?? documentsError ?? elevatorsError ?? contractsError ?? receivablesError}
         </p>
+      ) : null}
+      {selectedTab === "recouvrement" ? (
+        <Card className="p-5 sm:p-6">
+          {receivablesLoading ? <p role="status" className="text-sm text-slate-600">Chargement du recouvrement…</p> : (
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h2 className="font-display font-bold text-slate-900">Situation de recouvrement</h2>
+                <p className="mt-1 text-sm text-slate-600">Solde ouvert : <strong className="tabular-nums text-slate-900">{formatMoney(clientBalance)}</strong> · En retard : <strong className="tabular-nums text-red-700">{formatMoney(overdueBalance)}</strong></p>
+                <p className="mt-1 text-xs text-slate-500">Dernière relance : {latestReminder ? formatSafeDate(latestReminder.date) : "Aucune"}</p>
+              </div>
+              <Link href={`/recouvrement/clients/${client.id}`} className="inline-flex min-h-10 items-center rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-700">Ouvrir le relevé de compte</Link>
+            </div>
+          )}
+        </Card>
       ) : null}
       <Tabs
         tabs={[
           { id: "documents", label: `Documents (${clientDocuments.length})` },
           { id: "parc", label: `Parc et contrats (${clientElevators.length + clientContracts.length})` },
+          { id: "recouvrement", label: `Recouvrement (${clientInvoices.length})` },
         ]}
         selected={selectedTab}
         onChange={setSelectedTab}
@@ -214,7 +235,7 @@ export function ClientDetailsView({ id }: { id: string }) {
             ) : <p className="p-5 text-sm text-slate-600">Aucun contrat associé à ce client.</p>}
           </Card>
         </section>
-      ) : (
+      ) : selectedTab === "documents" ? (
       <>
       <section
         aria-label="Indicateurs client"
@@ -229,7 +250,7 @@ export function ClientDetailsView({ id }: { id: string }) {
         />
         <StatCard
           label="Impayés TTC"
-          value={formatMoney(totalImpaye(client.id, documents))}
+          value={formatMoney(clientBalance)}
           detail="Factures en attente de règlement"
           icon={FileText}
           iconClassName="bg-amber-50 text-amber-700"
@@ -271,7 +292,16 @@ export function ClientDetailsView({ id }: { id: string }) {
         )}
       </section>
       </>
-      )}
+      ) : null}
     </div>
   );
+}
+
+function dateValue(value: import("@/types").DateInput): number {
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === "number") return value < 1e11 ? value * 1000 : value;
+  if (typeof value === "string") return Date.parse(value);
+  if (value && "toDate" in value) return value.toDate().getTime();
+  if (value && "seconds" in value) return value.seconds * 1000;
+  return 0;
 }

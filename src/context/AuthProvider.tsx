@@ -1,23 +1,35 @@
 "use client";
 
 import {
-  GoogleAuthProvider,
+  browserLocalPersistence,
+  getRedirectResult,
   onAuthStateChanged,
+  GoogleAuthProvider,
+  setPersistence,
   signInWithPopup,
+  signInWithRedirect,
   signOut as firebaseSignOut,
   type User,
 } from "firebase/auth";
+import { doc, onSnapshot } from "firebase/firestore";
 import {
   createContext,
   useCallback,
   useContext,
   useEffect,
   useMemo,
-  useState,
+  useReducer,
   type ReactNode,
 } from "react";
-import type { UserProfile, UserRole } from "@/types";
-import { ensureUserProfile } from "@/lib/ensureUserProfile";
+import { useRouter } from "next/navigation";
+import { useToast } from "@/components/ui/ToastProvider";
+import { isEmailAllowed } from "@/config/access";
+import {
+  authMachineReducer,
+  initialAuthMachineState,
+} from "@/lib/authMachine";
+import { ensureUserProfile, parseUserProfile } from "@/lib/ensureUserProfile";
+import { firestoreErrorMessage } from "@/lib/firestoreErrors";
 import {
   FirebaseConfigurationError,
   getFirebaseAuth,
@@ -25,17 +37,15 @@ import {
   missingFirebaseVariables,
 } from "@/lib/firebase";
 
-const initialConfigurationError = (() => {
-  const missing = missingFirebaseVariables();
-  return missing.length ? new FirebaseConfigurationError(missing).message : null;
-})();
-
 type AuthContextValue = {
   user: User | null;
-  profile: UserProfile | null;
-  role: UserRole | null;
+  profile: ReturnType<typeof parseUserProfile> | null;
+  role: ReturnType<typeof parseUserProfile>["role"] | null;
+  status: "loading" | "unauthenticated" | "unauthorized" | "ready" | "error";
   loading: boolean;
   error: string | null;
+  errorCode: string | null;
+  attemptedEmail: string | null;
   signIn: () => Promise<void>;
   signOut: () => Promise<void>;
   clearError: () => void;
@@ -43,127 +53,279 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+function firebaseErrorCode(error: unknown): string | null {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof error.code === "string"
+  ) {
+    return error.code;
+  }
+  return null;
+}
+
 function readableAuthError(error: unknown): string {
-  if (error instanceof Error && error.message === "Accès non autorisé") {
+  const code = firebaseErrorCode(error);
+  const messages: Record<string, string> = {
+    "auth/popup-blocked": "La fenêtre de connexion a été bloquée. Autorisez les fenêtres pop-up ou réessayez.",
+    "auth/unauthorized-domain": "Ce domaine n’est pas autorisé. Ajoutez-le dans Firebase Authentication → Paramètres → Domaines autorisés.",
+    "auth/operation-not-allowed": "La connexion Google n’est pas activée dans Firebase Authentication → Sign-in method.",
+    "auth/network-request-failed": "Connexion réseau impossible. Vérifiez votre accès à Internet puis réessayez.",
+    "auth/internal-error": "Firebase Authentication a rencontré une erreur interne. Réessayez dans quelques instants.",
+    "auth/invalid-api-key": "La configuration Firebase est invalide. Vérifiez les variables NEXT_PUBLIC_FIREBASE_*.",
+    "permission-denied": "Accès au profil Firestore refusé. Vérifiez les règles déployées, le rôle et l’état actif du compte.",
+    "firestore/permission-denied": "Accès au profil Firestore refusé. Vérifiez les règles déployées, le rôle et l’état actif du compte.",
+  };
+  if (code && messages[code]) return messages[code];
+  if (error instanceof FirebaseConfigurationError || error instanceof Error) {
     return error.message;
   }
-  if (error instanceof Error && error.message.includes("Configuration Firebase")) {
-    return error.message;
-  }
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    error.code === "permission-denied"
-  ) {
-    return "Accès refusé par les règles Firestore. Vérifiez le profil et les règles de sécurité.";
-  }
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    typeof error.code === "string" &&
-    error.code.startsWith("auth/")
-  ) {
-    return "La connexion Google a échoué. Vérifiez que le fournisseur Google est activé dans Firebase.";
-  }
-  return error instanceof Error
-    ? error.message
-    : "Une erreur de connexion est survenue. Réessayez.";
+  return "Une erreur de connexion est survenue. Réessayez.";
+}
+
+function identityFromUser(user: User) {
+  return {
+    uid: user.uid,
+    email: user.email,
+    emailVerified: user.emailVerified,
+    displayName: user.displayName,
+    photoURL: user.photoURL,
+  };
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [loading, setLoading] = useState(initialConfigurationError === null);
-  const [error, setError] = useState<string | null>(initialConfigurationError);
+  const [state, dispatch] = useReducer(authMachineReducer, initialAuthMachineState);
+  const router = useRouter();
+  const { showToast } = useToast();
 
   useEffect(() => {
-    if (initialConfigurationError) return;
     let active = true;
-    let unsubscribe = () => {};
+    let unsubscribeAuth = () => {};
+    let unsubscribeProfile = () => {};
+    let currentUid: string | null = null;
+    let creatingProfileUid: string | null = null;
+    let redirectError: unknown = null;
 
-    try {
-      const auth = getFirebaseAuth();
-      const db = getFirebaseDb();
-      unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-        if (!active) return;
-        if (!firebaseUser) {
-          setUser(null);
-          setProfile(null);
-          setLoading(false);
-          return;
-        }
-
-        setLoading(true);
-        try {
-          const userProfile = await ensureUserProfile(db, firebaseUser);
-          if (!active) return;
-          setUser(firebaseUser);
-          setProfile(userProfile);
-          setError(null);
-        } catch (profileError) {
-          await firebaseSignOut(auth);
-          if (!active) return;
-          setUser(null);
-          setProfile(null);
-          setError(readableAuthError(profileError));
-        } finally {
-          if (active) setLoading(false);
-        }
+    const missing = missingFirebaseVariables();
+    if (missing.length) {
+      dispatch({
+        type: "AUTH_ERROR",
+        error: new FirebaseConfigurationError(missing).message,
+        code: "firebase/configuration-incomplete",
       });
-    } catch (configurationError) {
-      const message = readableAuthError(configurationError);
-      window.setTimeout(() => {
-        if (!active) return;
-        setError(message);
-        setLoading(false);
-      }, 0);
+      return () => {
+        active = false;
+      };
     }
 
+    async function initializeAuth() {
+      try {
+        const auth = getFirebaseAuth();
+        await setPersistence(auth, browserLocalPersistence);
+        if (!active) return;
+        try {
+          await getRedirectResult(auth);
+        } catch (redirectFailure) {
+          if (!active) return;
+          redirectError = redirectFailure;
+          dispatch({
+            type: "AUTH_ERROR",
+            error: readableAuthError(redirectFailure),
+            code: firebaseErrorCode(redirectFailure),
+          });
+        }
+        const db = getFirebaseDb();
+        unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
+          if (!active) return;
+          if (!firebaseUser) {
+            unsubscribeProfile();
+            unsubscribeProfile = () => {};
+            currentUid = null;
+            creatingProfileUid = null;
+            if (redirectError) {
+              dispatch({
+                type: "AUTH_ERROR",
+                error: readableAuthError(redirectError),
+                code: firebaseErrorCode(redirectError),
+              });
+            } else {
+              dispatch({ type: "AUTH_EMPTY" });
+            }
+            return;
+          }
+          if (currentUid === firebaseUser.uid) return;
+
+          unsubscribeProfile();
+          unsubscribeProfile = () => {};
+          currentUid = firebaseUser.uid;
+          creatingProfileUid = null;
+          const identity = identityFromUser(firebaseUser);
+          dispatch({ type: "AUTH_LOADING", user: firebaseUser });
+
+          if (!isEmailAllowed(identity.email, identity.emailVerified)) {
+            dispatch({
+              type: "AUTH_UNAUTHORIZED",
+              email: identity.email?.trim() || null,
+            });
+            void firebaseSignOut(auth).catch((signOutError: unknown) => {
+              if (!active) return;
+              dispatch({
+                type: "AUTH_ERROR",
+                error: readableAuthError(signOutError),
+                code: firebaseErrorCode(signOutError),
+                email: identity.email,
+              });
+            });
+            return;
+          }
+
+          const profileReference = doc(db, "users", firebaseUser.uid);
+          unsubscribeProfile = onSnapshot(
+            profileReference,
+            (snapshot) => {
+              if (!active || currentUid !== firebaseUser.uid) return;
+              if (snapshot.exists()) {
+                try {
+                  const profile = parseUserProfile(
+                    firebaseUser.uid,
+                    snapshot.data(),
+                    identity,
+                  );
+                  creatingProfileUid = null;
+                  dispatch({ type: "AUTH_READY", user: firebaseUser, profile });
+                } catch (profileError) {
+                  const message = profileError instanceof Error
+                    ? profileError.message
+                    : "Le profil utilisateur est invalide.";
+                  dispatch({
+                    type: "AUTH_ERROR",
+                    error: message,
+                    code: "auth/invalid-user-profile",
+                    email: identity.email,
+                  });
+                }
+                return;
+              }
+
+              dispatch({ type: "AUTH_LOADING", user: firebaseUser });
+              if (creatingProfileUid === firebaseUser.uid) return;
+              creatingProfileUid = firebaseUser.uid;
+              void ensureUserProfile(db, identity).then(
+                (profile) => {
+                  if (active && currentUid === firebaseUser.uid) {
+                    dispatch({ type: "AUTH_READY", user: firebaseUser, profile });
+                  }
+                },
+                (profileError: unknown) => {
+                  if (!active || currentUid !== firebaseUser.uid) return;
+                  creatingProfileUid = null;
+                  dispatch({
+                    type: "AUTH_ERROR",
+                    error: readableAuthError(profileError),
+                    code: firebaseErrorCode(profileError),
+                    email: identity.email,
+                  });
+                },
+              );
+            },
+            (snapshotError) => {
+              if (!active || currentUid !== firebaseUser.uid) return;
+              dispatch({
+                type: "AUTH_ERROR",
+                error: readableAuthError(snapshotError) || firestoreErrorMessage(snapshotError),
+                code: firebaseErrorCode(snapshotError),
+                email: identity.email,
+              });
+            },
+          );
+        });
+      } catch (initializationError) {
+        if (!active) return;
+        dispatch({
+          type: "AUTH_ERROR",
+          error: readableAuthError(initializationError),
+          code: firebaseErrorCode(initializationError),
+        });
+      }
+    }
+
+    void initializeAuth();
     return () => {
       active = false;
-      unsubscribe();
+      unsubscribeProfile();
+      unsubscribeAuth();
     };
   }, []);
 
   const signIn = useCallback(async () => {
-    setError(null);
+    dispatch({ type: "AUTH_LOADING" });
     try {
       const auth = getFirebaseAuth();
+      await setPersistence(auth, browserLocalPersistence);
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: "select_account" });
-      await signInWithPopup(auth, provider);
+      try {
+        await signInWithPopup(auth, provider);
+      } catch (popupError) {
+        if (firebaseErrorCode(popupError) === "auth/popup-blocked") {
+          await signInWithRedirect(auth, provider);
+          return;
+        }
+        if (
+          firebaseErrorCode(popupError) === "auth/popup-closed-by-user" ||
+          firebaseErrorCode(popupError) === "auth/cancelled-popup-request"
+        ) {
+          dispatch({ type: "AUTH_EMPTY" });
+          return;
+        }
+        throw popupError;
+      }
     } catch (signInError) {
-      setError(readableAuthError(signInError));
-      throw signInError;
+      dispatch({
+        type: "AUTH_ERROR",
+        error: readableAuthError(signInError),
+        code: firebaseErrorCode(signInError),
+      });
     }
   }, []);
 
   const signOut = useCallback(async () => {
-    setError(null);
     try {
       await firebaseSignOut(getFirebaseAuth());
-      setUser(null);
-      setProfile(null);
+      dispatch({ type: "RESET" });
+      router.replace("/login");
+      showToast("Vous êtes déconnecté");
     } catch (signOutError) {
-      setError(readableAuthError(signOutError));
+      dispatch({
+        type: "AUTH_ERROR",
+        error: readableAuthError(signOutError),
+        code: firebaseErrorCode(signOutError),
+        email: state.user?.email,
+      });
       throw signOutError;
     }
+  }, [router, showToast, state.user?.email]);
+
+  const clearError = useCallback(() => {
+    dispatch({ type: "CLEAR_MESSAGE" });
   }, []);
 
   const value = useMemo<AuthContextValue>(
     () => ({
-      user,
-      profile,
-      role: profile?.role ?? null,
-      loading,
-      error,
+      user: state.user,
+      profile: state.profile,
+      role: state.profile?.role ?? null,
+      status: state.status,
+      loading: state.status === "loading",
+      error: state.error,
+      errorCode: state.errorCode,
+      attemptedEmail: state.attemptedEmail,
       signIn,
       signOut,
-      clearError: () => setError(null),
+      clearError,
     }),
-    [user, profile, loading, error, signIn, signOut],
+    [state, signIn, signOut, clearError],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -39,20 +39,154 @@ service cloud.firestore {
       return isOwner() || isDg();
     }
 
+    function noArticleCostFields(data) {
+      return !data.keys().hasAny(['prixAchatHT', 'fournisseurPrincipal']);
+    }
+
+    function stockFieldsValid(data) {
+      return (
+          data.type == 'service'
+          && !data.keys().hasAny([
+            'stockQte', 'seuilAlerte', 'emplacement', 'lastStockMovementId'
+          ])
+        )
+        || (
+          data.type == 'produit'
+          && data.stockQte is number
+          && data.stockQte >= 0
+          && data.seuilAlerte is number
+          && data.seuilAlerte >= 0
+          && data.emplacement is string
+        );
+    }
+
+    function stockValuesEqual(left, right) {
+      return left >= right - 0.000001 && left <= right + 0.000001;
+    }
+
+    function stockMovementFieldsValid(
+      movementId,
+      articleId,
+      movement,
+      stockBefore,
+      stockAfter
+    ) {
+      return movement.keys().hasAll([
+          'articleId', 'type', 'qte', 'qteAvant', 'qteApres', 'motif',
+          'source', 'userId', 'date'
+        ])
+        && movement.articleId == articleId
+        && movement.type in ['entree', 'sortie', 'ajustement']
+        && movement.source in [
+          'manuel', 'document', 'intervention', 'inventaire'
+        ]
+        && movement.qte is number
+        && movement.qte > 0
+        && movement.qteAvant is number
+        && movement.qteApres is number
+        && movement.qteApres >= 0
+        && movement.motif is string
+        && movement.motif.size() > 0
+        && movement.userId == request.auth.uid
+        && movement.date is timestamp
+        && movement.qteAvant == stockBefore
+        && stockAfter == movement.qteApres
+        && (
+          (movement.type == 'entree'
+            && stockValuesEqual(
+              movement.qteApres,
+              movement.qteAvant + movement.qte
+            ))
+          || (movement.type == 'sortie'
+            && stockValuesEqual(
+              movement.qteApres,
+              movement.qteAvant - movement.qte
+            ))
+          || (movement.type == 'ajustement'
+            && (
+              (movement.qteApres >= movement.qteAvant
+                && stockValuesEqual(
+                  movement.qte,
+                  movement.qteApres - movement.qteAvant
+                ))
+              || (movement.qteApres < movement.qteAvant
+                && stockValuesEqual(
+                  movement.qte,
+                  movement.qteAvant - movement.qteApres
+                ))
+            ))
+        )
+        ;
+    }
+
+    function stockMovementValid(movementId, articleId, movement) {
+      let after = getAfter(
+        /databases/$(database)/documents/articles/$(articleId)
+      );
+      return stockMovementFieldsValid(
+          movementId,
+          articleId,
+          movement,
+          movement.qteAvant,
+          movement.qteApres
+        )
+        && after.data.type == 'produit'
+        && after.data.stockQte == movement.qteApres
+        && after.data.lastStockMovementId == movementId;
+    }
+
+    function articleStockTransitionValid(articleId) {
+      return (
+          request.resource.data.get('stockQte', 0)
+            == resource.data.get('stockQte', 0)
+          && request.resource.data.get('lastStockMovementId', '')
+            == resource.data.get('lastStockMovementId', '')
+        )
+        || (
+          request.resource.data.type == 'service'
+          && (
+            resource.data.get('type', '') == 'service'
+            || resource.data.get('categorie', '') == 'Services'
+          )
+          && resource.data.get('stockQte', 0) == 0
+          && !request.resource.data.keys().hasAny([
+            'stockQte', 'seuilAlerte', 'emplacement', 'lastStockMovementId'
+          ])
+        )
+        || (
+          request.resource.data.type == 'produit'
+          && request.resource.data.stockQte >= 0
+          && request.resource.data.lastStockMovementId is string
+          && stockMovementFieldsValid(
+            request.resource.data.lastStockMovementId,
+            articleId,
+            getAfter(/databases/$(database)/documents/stockMovements/$(request.resource.data.lastStockMovementId)).data,
+            resource.data.get('stockQte', 0),
+            request.resource.data.stockQte
+          )
+        );
+    }
+
+    function whitelistRoles() {
+      return {
+        'laassas.youness65@gmail.com': 'owner',
+        'yl.younesslaassas@gmail.com': 'commercial',
+        'techniquegi39@gmail.com': 'dg'
+      };
+    }
+
     function validWhitelistProfile(uid) {
+      let normalizedEmail = request.auth.token.email.lower();
+      let expectedRole = whitelistRoles().get(normalizedEmail, '');
       return request.resource.data.keys().hasAll([
           'email', 'nom', 'role', 'actif', 'createdAt'
         ])
+        && request.auth.uid == uid
+        && request.auth.token.email_verified == true
         && request.resource.data.actif == true
-        && request.resource.data.email == request.auth.token.email
-        && (
-          (request.resource.data.email == 'laassas.youness65@gmail.com'
-            && request.resource.data.role == 'owner')
-          || (request.resource.data.email == 'yl.younesslaaassas@gmail.com'
-            && request.resource.data.role == 'commercial')
-          || (request.resource.data.email == 'techniquegi39@gmail.com'
-            && request.resource.data.role == 'dg')
-        );
+        && request.resource.data.email == normalizedEmail
+        && expectedRole != ''
+        && request.resource.data.role == expectedRole;
     }
 
     function documentMatchesCounter(counterKey, documentId, sequence) {
@@ -128,7 +262,7 @@ service cloud.firestore {
           'facture', 'devis', 'recu', 'bon_livraison'
         ]
         && request.resource.data.statut in [
-          'en_attente', 'paye', 'annule'
+          'en_attente', 'partiel', 'paye', 'annule'
         ]
         && request.resource.data.numero is string
         && request.resource.data.clientId is string
@@ -140,12 +274,117 @@ service cloud.firestore {
           == request.resource.data.type + '_' + request.resource.data.yearKey
         && request.resource.data.sequence is int
         && (isOwner() || isDg()
+          || request.resource.data.get('stockApplied', false) == false)
+        && (isOwner() || isDg()
           || (isCommercial()
-            && request.resource.data.type in ['facture', 'devis']))
+            && (request.resource.data.type in ['facture', 'devis']
+              || (request.resource.data.type == 'recu'
+                && validPaymentReceipt()))))
         && counterAfter.data.sequence == request.resource.data.sequence
         && counterAfter.data.type == request.resource.data.type
         && counterAfter.data.year == request.resource.data.year
         && counterAfter.data.lastDocumentId == request.resource.id;
+    }
+
+    function validPaymentReceipt() {
+      let paymentId = request.resource.data.get('paymentId', '');
+      let paymentAfter = getAfter(
+        /databases/$(database)/documents/paiements/$(paymentId)
+      );
+      let eventPath = /databases/$(database)/documents/paiementEvenements/$(paymentId + '-encaisse');
+      return paymentId is string
+        && paymentId.size() > 0
+        && request.resource.data.type == 'recu'
+        && request.resource.data.statut == 'paye'
+        && request.resource.data.clientId == paymentAfter.data.clientId
+        && (
+          (paymentAfter.data.recuDocumentId == request.resource.id
+            && paymentAfter.data.userId == request.auth.uid
+            && paymentAfter.data.statut in ['valide', 'encaisse'])
+          || (existsAfter(eventPath)
+            && getAfter(eventPath).data.recuDocumentId == request.resource.id
+            && getAfter(eventPath).data.userId == request.auth.uid
+            && getAfter(eventPath).data.statut == 'encaisse')
+        );
+    }
+
+    function paymentBelongsToCurrentUser(payment) {
+      return payment.invoiceCreatedBy == request.auth.uid;
+    }
+
+    function validPaymentCreate() {
+      let invoicePath = /databases/$(database)/documents/documents/$(request.resource.data.documentId);
+      let invoice = get(invoicePath);
+      let invoiceAfter = getAfter(invoicePath);
+      return request.resource.data.keys().hasAll([
+          'documentId', 'clientId', 'montant', 'mode', 'reference',
+          'statut', 'userId', 'date', 'invoiceCreatedBy'
+        ])
+        && request.resource.data.documentId is string
+        && request.resource.data.clientId is string
+        && request.resource.data.montant is number
+        && request.resource.data.montant > 0
+        && request.resource.data.mode in ['especes', 'virement', 'cheque', 'effet']
+        && request.resource.data.reference is string
+        && request.resource.data.reference.size() > 0
+        && request.resource.data.statut in ['valide', 'en_portefeuille']
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.date is timestamp
+        && invoice.data.type == 'facture'
+        && invoice.data.statut != 'annule'
+        && invoice.data.clientId == request.resource.data.clientId
+        && invoice.data.createdBy == request.resource.data.invoiceCreatedBy
+        && (isOwner() || isDg()
+          || invoice.data.createdBy == request.auth.uid)
+        && invoiceAfter.data.montantPaye >= invoice.data.get('montantPaye', 0)
+        && invoiceAfter.data.montantPaye <= invoice.data.get('montantTTC', 0)
+        && request.resource.data.montant
+          <= invoice.data.get('montantTTC', 0) - invoice.data.get('montantPaye', 0)
+        && (request.resource.data.mode in ['cheque', 'effet']
+          ? request.resource.data.statut == 'en_portefeuille'
+            && request.resource.data.dateEncaissementPrevue is timestamp
+          : request.resource.data.statut == 'valide')
+        && (request.resource.data.mode != 'cheque'
+          || (request.resource.data.get('banque', '') is string
+            && request.resource.data.get('banque', '').size() > 0));
+    }
+
+    function validCommercialInvoicePaymentCache(documentId) {
+      let paymentId = request.resource.data.get('lastPaymentId', '');
+      let paymentPath = /databases/$(database)/documents/paiements/$(paymentId);
+      let payment = getAfter(paymentPath);
+      let oldPaid = resource.data.get('montantPaye', 0);
+      let countedAmount = payment.data.statut in ['valide', 'encaisse']
+        ? payment.data.montant
+        : 0;
+      let nextPaid = oldPaid + countedAmount;
+      return paymentId is string
+        && paymentId.size() > 0
+        && !exists(paymentPath)
+        && existsAfter(paymentPath)
+        && payment.data.documentId == documentId
+        && payment.data.clientId == resource.data.clientId
+        && payment.data.invoiceCreatedBy == request.auth.uid
+        && payment.data.userId == request.auth.uid
+        && request.resource.data.montantTTC == resource.data.get('montantTTC', 0)
+        && request.resource.data.montantPaye == nextPaid
+        && nextPaid <= request.resource.data.montantTTC
+        && request.resource.data.montantTTC is number
+        && request.resource.data.statut
+          == (nextPaid >= request.resource.data.montantTTC ? 'paye'
+            : (nextPaid > 0 ? 'partiel' : 'en_attente'));
+    }
+
+    function clientCreditUnchanged() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        'delaiPaiementJours', 'limiteCredit', 'notesRecouvrement'
+      ]);
+    }
+
+    function noClientCreditFields(data) {
+      return !data.keys().hasAny([
+        'delaiPaiementJours', 'limiteCredit', 'notesRecouvrement'
+      ]);
     }
 
     match /users/{uid} {
@@ -154,28 +393,33 @@ service cloud.firestore {
       allow create: if signedIn()
         && request.auth.uid == uid
         && validWhitelistProfile(uid);
-      allow update: if isOwner()
-        && (request.auth.uid != uid
-          || request.resource.data.role == resource.data.role);
+      allow update: if isOwner();
       allow delete: if isOwner();
     }
 
     match /clients/{clientId} {
       allow read: if canReadAllBusinessData();
-      allow create: if isOwner() || isDg() || isCommercial();
-      allow update: if isOwner() || isDg() || isCommercial();
+      allow create: if isOwner() || isDg()
+        || (isCommercial() && noClientCreditFields(request.resource.data));
+      allow update: if isOwner() || isDg()
+        || (isCommercial() && clientCreditUnchanged());
       allow delete: if isOwner();
     }
 
     match /articles/{articleId} {
-      allow read: if canReadAllBusinessData()
-        && !resource.data.keys().hasAny(['prixAchatHT']);
-      allow create, update: if canWriteBusinessData()
-        && !request.resource.data.keys().hasAny(['prixAchatHT']);
+      allow read: if canWriteBusinessData()
+        || (isCommercial() && noArticleCostFields(resource.data));
+      allow create: if canWriteBusinessData()
+        && noArticleCostFields(request.resource.data)
+        && stockFieldsValid(request.resource.data);
+      allow update: if canWriteBusinessData()
+        && noArticleCostFields(request.resource.data)
+        && stockFieldsValid(request.resource.data)
+        && articleStockTransitionValid(articleId);
       allow delete: if isOwner();
     }
 
-    match /articleCosts/{articleId} {
+    match /articlesCouts/{articleId} {
       allow read, create, update: if isOwner() || isDg();
       allow delete: if isOwner();
     }
@@ -191,9 +435,13 @@ service cloud.firestore {
           && request.resource.data.createdBy == request.auth.uid
           && request.resource.data.numero == resource.data.numero
           && request.resource.data.type == resource.data.type
-          && request.resource.data.type in ['facture', 'devis']
+          && request.resource.data.type == 'facture'
           && request.resource.data.counterKey == resource.data.counterKey
-          && request.resource.data.sequence == resource.data.sequence);
+          && request.resource.data.sequence == resource.data.sequence
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'montantTTC', 'montantPaye', 'statut', 'lastPaymentId'
+          ])
+          && validCommercialInvoicePaymentCache(documentId));
       allow delete: if isOwner();
     }
 
@@ -271,19 +519,76 @@ service cloud.firestore {
 
     match /stockMovements/{movementId} {
       allow read: if isOwner() || isDg();
-      allow create, update: if isOwner() || isDg();
-      allow delete: if isOwner();
+      allow create: if canWriteBusinessData()
+        && stockMovementValid(
+          movementId,
+          request.resource.data.articleId,
+          request.resource.data
+        );
+      allow update, delete: if false;
     }
 
     match /paiements/{paymentId} {
-      allow read: if isOwner() || isDg();
-      allow create, update: if isOwner() || isDg();
-      allow delete: if isOwner();
+      allow read: if isOwner() || isDg()
+        || (isCommercial() && paymentBelongsToCurrentUser(resource.data));
+      allow create: if (isOwner() || isDg() || isCommercial())
+        && validPaymentCreate();
+      allow update, delete: if false;
+    }
+
+    match /paiementEvenements/{eventId} {
+      allow read: if isOwner() || isDg()
+        || (isCommercial()
+          && resource.data.invoiceCreatedBy == request.auth.uid);
+      allow create: if (isOwner() || isDg())
+        && request.resource.data.keys().hasAll([
+          'paiementId', 'documentId', 'statut', 'userId', 'date'
+        ])
+        && eventId == request.resource.data.paiementId + '-' + request.resource.data.statut
+        && request.resource.data.statut in [
+          'remis_banque', 'encaisse', 'impaye', 'annule'
+        ]
+        && (request.resource.data.statut != 'annule' || isOwner())
+        && (request.resource.data.statut != 'annule'
+          || (request.resource.data.get('motif', '') is string
+            && request.resource.data.get('motif', '').size() > 0))
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.date is timestamp
+        && exists(/databases/$(database)/documents/paiements/$(request.resource.data.paiementId))
+        && get(/databases/$(database)/documents/paiements/$(request.resource.data.paiementId)).data.documentId
+          == request.resource.data.documentId
+        && request.resource.data.invoiceCreatedBy
+          == get(/databases/$(database)/documents/paiements/$(request.resource.data.paiementId)).data.invoiceCreatedBy;
+      allow update, delete: if false;
     }
 
     match /relances/{reminderId} {
-      allow read: if isOwner() || isDg();
-      allow create, update: if isOwner() || isDg();
+      allow read: if isOwner() || isDg()
+        || (isCommercial() && resource.data.userId == request.auth.uid);
+      allow create: if (isOwner() || isDg() || isCommercial())
+        && request.resource.data.keys().hasAll([
+          'clientId', 'documentIds', 'niveau', 'canal', 'note', 'userId', 'date'
+        ])
+        && request.resource.data.clientId is string
+        && request.resource.data.documentIds is list
+        && request.resource.data.documentIds.size() > 0
+        && request.resource.data.niveau in [1, 2, 3]
+        && request.resource.data.canal in ['appel', 'whatsapp', 'email', 'courrier', 'visite']
+        && request.resource.data.note is string
+        && request.resource.data.note.size() > 0
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.date is timestamp
+        && (isOwner() || isDg()
+          || request.resource.data.userId == request.auth.uid)
+        && (
+          !request.resource.data.keys().hasAny([
+            'promesseMontant', 'promessePaiementDate'
+          ])
+          || (request.resource.data.promesseMontant is number
+            && request.resource.data.promesseMontant > 0
+            && request.resource.data.promessePaiementDate is timestamp)
+        );
+      allow update: if isOwner() || isDg();
       allow delete: if isOwner();
     }
 

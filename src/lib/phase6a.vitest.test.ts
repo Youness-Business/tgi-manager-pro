@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { allowedAccountForEmail, accessWhitelist } from "@/config/access";
+import {
+  allowedAccountForEmail,
+  accessWhitelist,
+  getRoleForEmail,
+  isEmailAllowed,
+} from "@/config/access";
 import { can, roleLabel } from "@/lib/permissions";
 
 describe("authentification et permissions Phase 6A", () => {
@@ -9,11 +14,19 @@ describe("authentification et permissions Phase 6A", () => {
       "owner",
     );
     expect(
-      allowedAccountForEmail("yl.younesslaaassas@gmail.com")?.role,
+      allowedAccountForEmail("yl.younesslaassas@gmail.com")?.role,
     ).toBe("commercial");
+    expect(allowedAccountForEmail("yl.younesslaaassas@gmail.com")).toBeNull();
     expect(allowedAccountForEmail("techniquegi39@gmail.com")?.role).toBe("dg");
     expect(allowedAccountForEmail("intrus@example.com")).toBeNull();
     expect(allowedAccountForEmail(null)).toBeNull();
+    expect(
+      getRoleForEmail("  YL.YOUNESSLAASSAS@GMAIL.COM ", true),
+    ).toBe("commercial");
+    expect(getRoleForEmail("techniquegi39@gmail.com", false)).toBeNull();
+    expect(isEmailAllowed("LAASSAS.YOUNESS65@GMAIL.COM", true)).toBe(true);
+    expect(isEmailAllowed("laassas.youness65@gmail.com", false)).toBe(false);
+    expect(isEmailAllowed(" inconnu@example.com ", true)).toBe(false);
   });
 
   it("applique les permissions du propriétaire et du directeur général", () => {
@@ -22,6 +35,8 @@ describe("authentification et permissions Phase 6A", () => {
     expect(can("dg", "read", "collections")).toBe(true);
     expect(can("dg", "approve", "contracts")).toBe(true);
     expect(can("dg", "readPurchasePrice", "catalogue")).toBe(true);
+    expect(can("dg", "readPurchasePrice", "stock")).toBe(true);
+    expect(can("dg", "readStockMovements", "stock")).toBe(true);
     expect(can("dg", "delete", "documents")).toBe(false);
     expect(can("dg", "manageUsers", "users")).toBe(false);
   });
@@ -33,6 +48,10 @@ describe("authentification et permissions Phase 6A", () => {
     expect(can("commercial", "read", "elevators")).toBe(true);
     expect(can("commercial", "readPurchasePrice", "catalogue")).toBe(false);
     expect(can("commercial", "readMargins", "catalogue")).toBe(false);
+    expect(can("commercial", "read", "stock")).toBe(true);
+    expect(can("commercial", "readPurchasePrice", "stock")).toBe(false);
+    expect(can("commercial", "readStockMovements", "stock")).toBe(false);
+    expect(can("commercial", "create", "stock")).toBe(false);
     expect(can("commercial", "delete", "documents")).toBe(false);
     expect(can("commercial", "manageUsers", "users")).toBe(false);
     expect(can(null, "read", "dashboard")).toBe(false);

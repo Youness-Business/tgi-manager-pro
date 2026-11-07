@@ -1,7 +1,8 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter, Plus_Jakarta_Sans } from "next/font/google";
 import { Suspense } from "react";
 import { ClientProviders } from "@/components/auth/ClientApplication";
+import { RegisterServiceWorker } from "@/components/pwa/RegisterServiceWorker";
 import "./globals.css";
 
 const inter = Inter({
@@ -20,6 +21,25 @@ export const metadata: Metadata = {
     template: "%s | TGI Ascenseurs",
   },
   description: "Outil interne de gestion de TGI Ascenseurs.",
+  manifest: "/manifest.webmanifest",
+  formatDetection: { telephone: false },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "TGI",
+  },
+  icons: {
+    icon: [
+      { url: "/icons/favicon.png", type: "image/png", sizes: "64x64" },
+      { url: "/icons/icon-192.png", type: "image/png", sizes: "192x192" },
+    ],
+    apple: [{ url: "/apple-icon.png", type: "image/png", sizes: "180x180" }],
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#0B0F19",
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -44,6 +64,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         >
           <ClientProviders>{children}</ClientProviders>
         </Suspense>
+        <RegisterServiceWorker />
       </body>
     </html>
   );

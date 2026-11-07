@@ -36,6 +36,7 @@ const companyFields: {
 type ImportState = {
   status?: string;
   lastError?: string | null;
+  stockVersion?: number;
 };
 
 function isImportState(value: unknown): value is ImportState {
@@ -82,6 +83,9 @@ export function SettingsPanel() {
                   status: value.status,
                   lastError:
                     typeof value.lastError === "string" ? value.lastError : null,
+                  ...(typeof value.stockVersion === "number"
+                    ? { stockVersion: value.stockVersion }
+                    : {}),
                 }
               : { status: "failed" },
           );
@@ -116,10 +120,14 @@ export function SettingsPanel() {
   }
 
   async function runImport() {
-    if (!profile || importState.status === "completed" || importing) return;
+    if (
+      !profile ||
+      (importState.status === "completed" && importState.stockVersion === 1) ||
+      importing
+    ) return;
     if (
       !window.confirm(
-        "Importer les clients, les articles et les documents de démonstration ? Cette opération ne peut être effectuée qu’une seule fois.",
+        "Compléter les données de démonstration avec les coûts isolés et les stocks initiaux ? Les entrées existantes seront conservées et aucun doublon ne sera créé.",
       )
     ) {
       return;
@@ -227,13 +235,17 @@ export function SettingsPanel() {
           Données de démonstration
         </h2>
         <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
-          Importe les clients, le catalogue et les documents d’exemple fournis
-          avec l’application. Les documents reçoivent des compteurs cohérents
-          et ne remplacent pas les entrées déjà présentes.
+          Ajoute les données d’exemple manquantes, déplace les coûts d’achat
+          dans leur collection protégée et initialise le stock avec son
+          historique. Les entrées existantes ne sont pas remplacées.
         </p>
-        {importState.status === "completed" ? (
+        {importState.status === "completed" && importState.stockVersion === 1 ? (
           <p className="mt-4 text-sm font-medium text-emerald-700">
             Import terminé. L’import ne peut être relancé.
+          </p>
+        ) : importState.status === "completed" ? (
+          <p className="mt-4 text-sm font-medium text-blue-800">
+            Les données initiales existent déjà. Lancez une fois l’extension Stock pour isoler les coûts et créer les mouvements de démonstration.
           </p>
         ) : importState.status === "importing" ? (
           <p role="status" className="mt-4 text-sm text-amber-800">
@@ -244,14 +256,18 @@ export function SettingsPanel() {
           type="button"
           disabled={
             importing ||
-            importState.status === "completed" ||
+            (importState.status === "completed" && importState.stockVersion === 1) ||
             importState.status === "importing"
           }
           onClick={runImport}
           className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-xl border border-gray-300 bg-white px-4 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:cursor-not-allowed disabled:opacity-60"
         >
           <Download aria-hidden="true" size={17} />
-          {importing ? "Importation…" : "Importer les données de démo"}
+          {importing
+            ? "Importation…"
+            : importState.status === "completed"
+              ? "Compléter l’import Stock"
+              : "Importer les données de démo"}
         </button>
       </section>
     </div>

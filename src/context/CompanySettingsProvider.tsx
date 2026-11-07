@@ -67,7 +67,8 @@ export function CompanySettingsProvider({
 }: {
   children: ReactNode;
 }) {
-  const { user } = useAuth();
+  const { user, status } = useAuth();
+  const readyUid = status === "ready" ? user?.uid ?? null : null;
   const [state, setState] = useState<CompanySettingsState>({
     uid: null,
     company: fallbackCompany,
@@ -76,7 +77,7 @@ export function CompanySettingsProvider({
   });
 
   useEffect(() => {
-    if (!user) return;
+    if (!readyUid) return;
     let active = true;
     try {
       const unsubscribe = onSnapshot(
@@ -85,7 +86,7 @@ export function CompanySettingsProvider({
           if (!active) return;
           if (!snapshot.exists()) {
             setState({
-              uid: user.uid,
+              uid: readyUid,
               company: fallbackCompany,
               loading: false,
               error: null,
@@ -95,7 +96,7 @@ export function CompanySettingsProvider({
           const data: unknown = snapshot.data();
           if (!isCompanySettings(data)) {
             setState({
-              uid: user.uid,
+              uid: readyUid,
               company: fallbackCompany,
               loading: false,
               error:
@@ -104,7 +105,7 @@ export function CompanySettingsProvider({
             return;
           }
           setState({
-            uid: user.uid,
+            uid: readyUid,
             company: data,
             loading: false,
             error: null,
@@ -113,7 +114,7 @@ export function CompanySettingsProvider({
         (snapshotError) => {
           if (!active) return;
           setState({
-            uid: user.uid,
+            uid: readyUid,
             company: fallbackCompany,
             loading: false,
             error: firestoreErrorMessage(snapshotError),
@@ -129,7 +130,7 @@ export function CompanySettingsProvider({
       window.setTimeout(() => {
         if (!active) return;
         setState({
-          uid: user.uid,
+          uid: readyUid,
           company: fallbackCompany,
           loading: false,
           error: message,
@@ -139,23 +140,31 @@ export function CompanySettingsProvider({
         active = false;
       };
     }
-  }, [user]);
+  }, [readyUid]);
 
-  const saveCompany = useCallback(async (nextSettings: CompanySettings) => {
-    try {
-      await setDoc(doc(getFirebaseDb(), "settings", "company"), nextSettings, {
-        merge: true,
-      });
-    } catch (saveError) {
-      const message = firestoreErrorMessage(saveError);
-      setState((current) => ({ ...current, error: message }));
-      throw new Error(message);
-    }
-  }, []);
+  const saveCompany = useCallback(
+    async (nextSettings: CompanySettings) => {
+      if (!readyUid) {
+        throw new Error("Une session active est nécessaire pour modifier les paramètres.");
+      }
+      try {
+        await setDoc(doc(getFirebaseDb(), "settings", "company"), nextSettings, {
+          merge: true,
+        });
+      } catch (saveError) {
+        const message = firestoreErrorMessage(saveError);
+        setState((current) =>
+          current.uid === readyUid ? { ...current, error: message } : current,
+        );
+        throw new Error(message);
+      }
+    },
+    [readyUid],
+  );
 
-  const isCurrentSession = Boolean(user && state.uid === user.uid);
+  const isCurrentSession = Boolean(readyUid && state.uid === readyUid);
   const company = isCurrentSession ? state.company : fallbackCompany;
-  const loading = Boolean(user) && (!isCurrentSession || state.loading);
+  const loading = Boolean(readyUid) && (!isCurrentSession || state.loading);
   const error = isCurrentSession ? state.error : null;
   const value = useMemo(
     () => ({ company, loading, error, saveCompany }),

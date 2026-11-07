@@ -1,6 +1,6 @@
 import type { Article } from "@/types";
 
-export const catalogue: Article[] = [
+const catalogueEntries: Omit<Article, "type" | "actif">[] = [
   {
     id: "mot-gl-001",
     reference: "MOT-GL-001",
@@ -98,3 +98,9 @@ export const catalogue: Article[] = [
     unite: "visite",
   },
 ];
+
+export const catalogue: Article[] = catalogueEntries.map((article) => ({
+  ...article,
+  type: article.categorie === "Services" ? "service" : "produit",
+  actif: true,
+}));

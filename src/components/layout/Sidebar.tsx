@@ -8,14 +8,18 @@ import {
   LogOut,
   Package,
   Building,
+  Boxes,
   PanelLeftClose,
   PanelLeftOpen,
   UsersRound,
+  Banknote,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { useAuth } from "@/context/AuthProvider";
+import { useArticles } from "@/context/FirestoreDataProvider";
+import { getStockStatut } from "@/lib/stock";
 import {
   can,
   roleLabel,
@@ -36,6 +40,8 @@ const navigation: readonly {
   { section: "TECHNIQUE", href: "/contrats", label: "Contrats", icon: FileText, resource: "contracts" },
   { section: "TECHNIQUE", href: "/parc", label: "Parc d’ascenseurs", icon: Building, resource: "elevators" },
   { section: "TECHNIQUE", href: "/interventions", label: "Interventions", icon: Wrench, resource: "interventions" },
+  { section: "TECHNIQUE", href: "/stock", label: "Stock", icon: Boxes, resource: "stock" },
+  { section: "FINANCE", href: "/recouvrement", label: "Recouvrement", icon: Banknote, resource: "collections" },
   { section: "CONFIGURATION", href: "/parametres", label: "Paramètres", icon: Building2, resource: "company" },
 ];
 
@@ -55,6 +61,11 @@ export function Sidebar({
   const pathname = usePathname();
   const isDrawer = variant === "drawer";
   const { user, profile, role, signOut } = useAuth();
+  const { items: articles } = useArticles();
+  const lowStockCount = articles.filter(
+    (article) =>
+      article.type === "produit" && getStockStatut(article) !== "ok",
+  ).length;
   const [signOutError, setSignOutError] = useState<string | null>(null);
 
   return (
@@ -117,7 +128,21 @@ export function Sidebar({
                 }`}
               >
                 <Icon size={19} aria-hidden="true" className="shrink-0" />
-                {!collapsed || isDrawer ? label : null}
+                {!collapsed || isDrawer ? (
+                  <>
+                    <span className="min-w-0 flex-1">{label}</span>
+                    {href === "/stock" && lowStockCount ? (
+                      <span className="rounded-full bg-amber-400 px-1.5 py-0.5 text-[10px] font-bold leading-none text-slate-950">
+                        {lowStockCount}
+                      </span>
+                    ) : null}
+                  </>
+                ) : href === "/stock" && lowStockCount ? (
+                  <span
+                    aria-label={`${lowStockCount} articles à réapprovisionner`}
+                    className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-amber-400 ring-2 ring-brand-950"
+                  />
+                ) : null}
               </Link>
             </div>
           );

@@ -15,6 +15,7 @@ import { useToast } from "@/components/ui/ToastProvider";
 import { useDocuments } from "@/context/DocumentsProvider";
 import { useArticles, useClients } from "@/context/FirestoreDataProvider";
 import { useAuth } from "@/context/AuthProvider";
+import { useCreances } from "@/context/RecouvrementDataProvider";
 import { computeDiscountedTotals } from "@/lib/computeDiscountedTotals";
 import { documentNumberPrefix } from "@/lib/documentNumber";
 import { formatMoney } from "@/lib/formatMoney";
@@ -29,11 +30,13 @@ import type {
   LigneDocument,
   PaymentMethod,
 } from "@/types";
+import { computeSolde, getRetardJours } from "@/lib/recouvrement";
 
 const paymentMethods: { value: PaymentMethod; label: string }[] = [
   { value: "especes", label: "Espèces" },
   { value: "virement", label: "Virement" },
   { value: "cheque", label: "Chèque" },
+  { value: "effet", label: "Effet de commerce" },
 ];
 
 type FieldErrors = {
@@ -61,6 +64,7 @@ export function DocumentGenerator() {
   const { showToast } = useToast();
   const {
     addDocument,
+    documents,
     error: documentError,
     loading: documentsLoading,
   } = useDocuments();
@@ -75,6 +79,8 @@ export function DocumentGenerator() {
     error: articlesError,
   } = useArticles();
   const { role } = useAuth();
+  const { documents: invoicesForCredit, paiements } = useCreances();
+  const canManageStock = role === "owner" || role === "dg";
   const requestedType = searchParams.get("type");
   const allowedTypes: readonly DocumentType[] =
     role === "commercial"
@@ -83,6 +89,8 @@ export function DocumentGenerator() {
   const initialType = allowedTypes.find((documentType) => documentType === requestedType);
   const [type, setType] = useState<DocumentType>(initialType ?? "facture");
   const [clientId, setClientId] = useState("");
+  const [bonLivraisonId, setBonLivraisonId] = useState("");
+  const [deduireDuStock, setDeduireDuStock] = useState(false);
   const [dateCreation, setDateCreation] = useState(todayIso);
   const [statut, setStatut] = useState<DocumentStatus>("en_attente");
   const [modePaiement, setModePaiement] =
@@ -97,6 +105,27 @@ export function DocumentGenerator() {
   const [isSaving, setIsSaving] = useState(false);
 
   const selectedClient = clients.find((client) => client.id === clientId);
+  const clientOutstandingInvoices = invoicesForCredit.filter(
+    (invoice) => invoice.clientId === clientId && invoice.id !== "document-apercu",
+  );
+  const outstandingBalance = clientOutstandingInvoices.reduce(
+    (sum, invoice) => sum + computeSolde(invoice, paiements),
+    0,
+  );
+  const overdueBalance = clientOutstandingInvoices.reduce(
+    (sum, invoice) =>
+      (getRetardJours(invoice.dateEcheance) ?? 0) > 0
+        ? sum + computeSolde(invoice, paiements)
+        : sum,
+    0,
+  );
+  const linkedDelivery = documents.find(
+    (document) =>
+      document.id === bonLivraisonId &&
+      document.type === "bon_livraison" &&
+      document.clientId === clientId,
+  );
+  const deliveryAlreadyDeducted = linkedDelivery?.stockApplied === true;
   const totals = useMemo(
     () => computeDiscountedTotals(lignes, remisePct),
     [lignes, remisePct],
@@ -251,7 +280,16 @@ export function DocumentGenerator() {
     };
     setIsSaving(true);
     try {
-      const savedDocument = await addDocument(newDocument);
+      const savedDocument = await addDocument(newDocument, {
+        deduireDuStock:
+          type === "facture" &&
+          canManageStock &&
+          deduireDuStock &&
+          !deliveryAlreadyDeducted,
+        ...(type === "facture" && bonLivraisonId
+          ? { bonLivraisonId }
+          : {}),
+      });
       setHasUnsavedChanges(false);
       showToast(
         `Document ${savedDocument.numero} enregistré avec succès.`,
@@ -441,7 +479,11 @@ export function DocumentGenerator() {
                 >
                   Statut
                 </label>
-                <select
+                {type === "facture" ? (
+                  <p className="flex min-h-11 items-center rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-600">
+                    Le statut sera calculé à partir des paiements enregistrés.
+                  </p>
+                ) : <select
                   id="document-status"
                   value={statut}
                   onChange={(event) => {
@@ -455,7 +497,7 @@ export function DocumentGenerator() {
                       {label}
                     </option>
                   ))}
-                </select>
+                </select>}
               </div>
               <div className="sm:col-span-2">
                 <label
@@ -472,6 +514,7 @@ export function DocumentGenerator() {
                   aria-describedby={errors.clientId ? errorId("client") : undefined}
                   onChange={(event) => {
                     setClientId(event.target.value);
+                    setBonLivraisonId("");
                     setHasUnsavedChanges(true);
                     setErrors((current) => ({
                       ...current,
@@ -495,6 +538,12 @@ export function DocumentGenerator() {
                 {selectedClient ? (
                   <p className="mt-2 break-words text-xs leading-5 text-slate-600">
                     ICE : {selectedClient.ice} · {selectedClient.adresse}
+                  </p>
+                ) : null}
+                {type === "facture" && selectedClient && (overdueBalance > 0 || (selectedClient.limiteCredit !== undefined && outstandingBalance + totals.totalTTC > selectedClient.limiteCredit)) ? (
+                  <p role="status" className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-950">
+                    {overdueBalance > 0 ? `Attention : ${formatMoney(overdueBalance)} de factures du client sont en retard. ` : ""}
+                    {selectedClient.limiteCredit !== undefined && outstandingBalance + totals.totalTTC > selectedClient.limiteCredit ? `Cette facture porterait le solde à ${formatMoney(outstandingBalance + totals.totalTTC)}, au-delà de la limite de crédit (${formatMoney(selectedClient.limiteCredit)}).` : ""}
                   </p>
                 ) : null}
               </div>
@@ -551,6 +600,63 @@ export function DocumentGenerator() {
                       </option>
                     ))}
                   </select>
+                </div>
+              ) : null}
+              {type === "facture" ? (
+                <div className="sm:col-span-2 space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div>
+                    <label
+                      htmlFor="invoice-delivery-link"
+                      className="mb-1.5 block text-sm font-medium text-slate-700"
+                    >
+                      Bon de livraison associé (facultatif)
+                    </label>
+                    <select
+                      id="invoice-delivery-link"
+                      value={bonLivraisonId}
+                      onChange={(event) => {
+                        setBonLivraisonId(event.target.value);
+                        setHasUnsavedChanges(true);
+                      }}
+                      className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                    >
+                      <option value="">Aucun bon associé</option>
+                      {documents
+                        .filter(
+                          (document) =>
+                            document.type === "bon_livraison" &&
+                            document.clientId === clientId,
+                        )
+                        .map((document) => (
+                          <option key={document.id} value={document.id}>
+                            {document.numero}
+                            {document.stockApplied ? " · stock décompté" : ""}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                  {canManageStock ? (
+                    <div className="space-y-1">
+                      <label className="flex min-h-9 items-center gap-2 text-sm text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={deduireDuStock}
+                          disabled={deliveryAlreadyDeducted}
+                          onChange={(event) => {
+                            setDeduireDuStock(event.target.checked);
+                            setHasUnsavedChanges(true);
+                          }}
+                          className="h-4 w-4 accent-blue-600"
+                        />
+                        Déduire les articles produits du stock à l’enregistrement
+                      </label>
+                      {deliveryAlreadyDeducted ? (
+                        <p className="text-xs leading-5 text-amber-800">
+                          Ce bon a déjà décompté le stock ; la facture ne peut pas le décompter une seconde fois.
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
             </div>
@@ -636,6 +742,13 @@ export function DocumentGenerator() {
                           <span className="block break-all text-xs text-slate-600">
                             {article.reference} · {article.unite}
                           </span>
+                          {article.type === "produit" ? (
+                            <span className="block text-xs text-slate-500">
+                              Stock disponible : {article.stockQte ?? 0}
+                            </span>
+                          ) : (
+                            <span className="block text-xs text-slate-500">Service</span>
+                          )}
                         </span>
                         <span className="shrink-0 text-sm font-medium tabular-nums text-slate-800">
                           {formatMoney(article.prixUnitaireHT)}
@@ -671,6 +784,30 @@ export function DocumentGenerator() {
                         <p className="mt-1 break-all font-mono text-xs text-slate-600">
                           {line.reference ?? line.articleId}
                         </p>
+                        {catalogue.find((article) => article.id === line.articleId)
+                          ?.type === "produit" ? (
+                          <p
+                            className={`mt-1 text-xs ${
+                              line.qte >
+                              (catalogue.find(
+                                (article) => article.id === line.articleId,
+                              )?.stockQte ?? 0)
+                                ? "font-medium text-amber-800"
+                                : "text-slate-500"
+                            }`}
+                          >
+                            Stock disponible :{" "}
+                            {catalogue.find(
+                              (article) => article.id === line.articleId,
+                            )?.stockQte ?? 0}
+                            {line.qte >
+                            (catalogue.find(
+                              (article) => article.id === line.articleId,
+                            )?.stockQte ?? 0)
+                              ? " · quantité supérieure au stock"
+                              : ""}
+                          </p>
+                        ) : null}
                       </div>
                       <button
                         type="button"

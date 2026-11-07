@@ -4,6 +4,10 @@ export type Client = {
   adresse: string;
   telephone: string;
   ice: string;
+  email?: string;
+  delaiPaiementJours?: number;
+  limiteCredit?: number;
+  notesRecouvrement?: string;
 };
 
 export type Article = {
@@ -13,12 +17,43 @@ export type Article = {
   categorie: ArticleCategory;
   prixUnitaireHT: number;
   unite: string;
-  type?: "produit" | "service";
+  type: "produit" | "service";
+  actif: boolean;
   stockQte?: number;
   seuilAlerte?: number;
-  prixAchatHT?: number;
   prixVenteHT?: number;
   emplacement?: string;
+  lastStockMovementId?: string;
+};
+
+export type ArticleCout = {
+  articleId: string;
+  prixAchatHT: number;
+  fournisseurPrincipal: string;
+};
+
+export type StockMovementType = "entree" | "sortie" | "ajustement";
+export type StockMovementSource =
+  | "manuel"
+  | "document"
+  | "intervention"
+  | "inventaire";
+
+export type StockMovement = {
+  id: string;
+  articleId: string;
+  type: StockMovementType;
+  qte: number;
+  qteAvant: number;
+  qteApres: number;
+  motif: string;
+  source: StockMovementSource;
+  documentId?: string;
+  interventionId?: string;
+  fournisseur?: string;
+  userId: string;
+  userName?: string;
+  date: DateInput;
 };
 
 export type ArticleCategory =
@@ -30,7 +65,7 @@ export type ArticleCategory =
 
 export type DocumentType = "facture" | "devis" | "recu" | "bon_livraison";
 
-export type DocumentStatus = "en_attente" | "paye" | "annule";
+export type DocumentStatus = "en_attente" | "partiel" | "paye" | "annule";
 
 export type LigneDocument = {
   articleId: string;
@@ -40,7 +75,58 @@ export type LigneDocument = {
   prixUnitaireHT: number;
 };
 
-export type PaymentMethod = "especes" | "virement" | "cheque";
+export type PaymentMethod = "especes" | "virement" | "cheque" | "effet";
+
+export type PaymentStatus =
+  | "valide"
+  | "en_portefeuille"
+  | "remis_banque"
+  | "encaisse"
+  | "impaye"
+  | "annule";
+
+export type Paiement = {
+  id: string;
+  documentId: string;
+  clientId: string;
+  montant: number;
+  mode: PaymentMethod;
+  reference: string;
+  banque?: string;
+  dateEncaissementPrevue?: DateInput;
+  statut: PaymentStatus;
+  recuDocumentId?: string;
+  invoiceCreatedBy?: string;
+  userId: string;
+  date: DateInput;
+};
+
+export type PaiementEvenement = {
+  id: string;
+  paiementId: string;
+  documentId: string;
+  statut: PaymentStatus;
+  motif?: string;
+  recuDocumentId?: string;
+  invoiceCreatedBy?: string;
+  userId: string;
+  date: DateInput;
+};
+
+export type RelanceCanal = "appel" | "whatsapp" | "email" | "courrier" | "visite";
+
+export type Relance = {
+  id: string;
+  clientId: string;
+  documentIds: string[];
+  niveau: 1 | 2 | 3;
+  canal: RelanceCanal;
+  note: string;
+  promessePaiementDate?: DateInput;
+  promesseMontant?: number;
+  userId: string;
+  date: DateInput;
+};
 
 export type DateInput =
   | Date
@@ -63,6 +149,13 @@ export type Document = {
   modePaiement?: PaymentMethod;
   createdBy?: string;
   createdAt?: DateInput;
+  stockApplied?: boolean;
+  bonLivraisonId?: string;
+  dateEcheance?: DateInput;
+  montantPaye?: number;
+  montantTTC?: number;
+  paymentId?: string;
+  lastPaymentId?: string;
 };
 
 export type UserRole = "owner" | "dg" | "commercial";
@@ -161,6 +254,7 @@ export type Intervention = {
   duree: number;
   signatureClient: boolean;
   nomSignataire: string;
+  stockApplied?: boolean;
   createdBy?: string;
   createdAt?: DateInput;
   counterKey?: string;

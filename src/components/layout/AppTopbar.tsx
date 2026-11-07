@@ -26,6 +26,7 @@ import { useDocuments } from "@/context/DocumentsProvider";
 import { useArticles, useClients } from "@/context/FirestoreDataProvider";
 import { useAscenseurs, useContrats } from "@/context/OperationsDataProvider";
 import { roleLabel } from "@/lib/permissions";
+import { normalizeSearch } from "@/lib/normalizeSearch";
 
 type SearchResult = {
   id: string;
@@ -43,6 +44,8 @@ const routeTitles: Record<string, string> = {
   "/contrats": "Contrats",
   "/parc": "Parc d’ascenseurs",
   "/interventions": "Interventions",
+  "/stock": "Stock",
+  "/recouvrement": "Recouvrement",
   "/parametres": "Paramètres",
 };
 
@@ -68,7 +71,7 @@ export function AppTopbar() {
   const previousFocusRef = useRef<HTMLElement | null>(null);
 
   const results = useMemo<SearchResult[]>(() => {
-    const needle = query.trim().toLocaleLowerCase("fr");
+    const needle = normalizeSearch(query);
     const matches = [
       ...clients.map((client): SearchResult => ({
         id: `client-${client.id}`,
@@ -80,8 +83,11 @@ export function AppTopbar() {
       ...articles.map((article): SearchResult => ({
         id: `article-${article.id}`,
         title: article.designation,
-        subtitle: `Article · ${article.reference}`,
-        href: "/catalogue",
+        subtitle:
+          article.type === "produit"
+            ? `Article · ${article.reference} · Stock ${article.stockQte ?? 0}`
+            : `Service · ${article.reference}`,
+        href: article.type === "produit" ? `/stock/${article.id}` : "/catalogue",
         kind: "Article",
       })),
       ...documents.map((document): SearchResult => ({
@@ -91,6 +97,15 @@ export function AppTopbar() {
         href: `/documents/${document.id}`,
         kind: "Document",
       })),
+      ...documents
+        .filter((document) => document.type === "facture" && document.statut !== "annule")
+        .map((document): SearchResult => ({
+          id: `receivable-${document.id}`,
+          title: document.numero,
+          subtitle: `Créance · ${clients.find((client) => client.id === document.clientId)?.nom ?? "Client"}`,
+          href: `/recouvrement/creances?q=${encodeURIComponent(document.numero)}`,
+          kind: "Document",
+        })),
       ...contrats.map((contract): SearchResult => ({
         id: `contract-${contract.id}`,
         title: contract.numero,
@@ -110,9 +125,7 @@ export function AppTopbar() {
       .filter((result) =>
         !needle
           ? true
-          : `${result.title} ${result.subtitle}`
-              .toLocaleLowerCase("fr")
-              .includes(needle),
+          : normalizeSearch(`${result.title} ${result.subtitle}`).includes(needle),
       )
       .slice(0, 8);
   }, [articles, ascenseurs, clients, contrats, documents, query]);

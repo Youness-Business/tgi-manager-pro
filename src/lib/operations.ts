@@ -13,6 +13,12 @@ import { nextDocumentNumberInTransaction } from "@/lib/documentNumber";
 import { nextOperationNumberInTransaction } from "@/lib/operationNumbers";
 import { computeTotals } from "@/lib/computeTotals";
 import { parseContrat } from "@/context/OperationsDataProvider";
+import {
+  commitStockMovementPlan,
+  planStockMovementsFromLines,
+} from "@/lib/stockTransactions";
+import { StockInsufficientError } from "@/lib/stock";
+import { assertOnline } from "@/lib/online";
 import type {
   Ascenseur,
   AscenseurStatut,
@@ -47,6 +53,7 @@ export async function createContract(
   input: NewContract,
   userId: string,
 ): Promise<Contrat> {
+  assertOnline();
   const db = getFirebaseDb();
   const id = crypto.randomUUID();
   const contractRef = doc(db, "contrats", id);
@@ -84,6 +91,7 @@ export async function saveElevator(
   elevator: Omit<Ascenseur, "createdAt"> & { createdAt?: Ascenseur["createdAt"] },
   isNew: boolean,
 ): Promise<void> {
+  assertOnline();
   const db = getFirebaseDb();
   const reference = doc(db, "ascenseurs", elevator.id);
   const values = {
@@ -106,6 +114,7 @@ export async function updateElevatorStatus(
   elevatorId: string,
   status: AscenseurStatut,
 ): Promise<void> {
+  assertOnline();
   try {
     await updateDoc(doc(getFirebaseDb(), "ascenseurs", elevatorId), { statut: status });
   } catch (error) {
@@ -117,6 +126,7 @@ export async function createIntervention(
   values: Pick<Intervention, "ascenseurId" | "type" | "date" | "technicien" | "descriptionProbleme">,
   userId: string,
 ): Promise<Intervention> {
+  assertOnline();
   const db = getFirebaseDb();
   const id = crypto.randomUUID();
   const reference = doc(db, "interventions", id);
@@ -169,7 +179,11 @@ export async function closeIntervention(
   intervention: Intervention,
   input: CloseInterventionInput,
   resumeElevatorAfterBreakdown: boolean,
+  userId: string,
+  userName: string,
+  deductStock = true,
 ): Promise<void> {
+  assertOnline();
   const db = getFirebaseDb();
   const interventionRef = doc(db, "interventions", intervention.id);
   const elevatorRef = doc(db, "ascenseurs", intervention.ascenseurId);
@@ -185,6 +199,9 @@ export async function closeIntervention(
       if (current.data().statut === "terminee") {
         throw new Error("Cette intervention est déjà clôturée.");
       }
+      if (current.data().stockApplied === true) {
+        throw new Error("Le stock a déjà été décompté pour cette intervention.");
+      }
       const contractId = elevatorSnapshot.data().contratId;
       let nextVisit: Date | null = null;
       if (intervention.type === "visite" && typeof contractId === "string") {
@@ -194,11 +211,29 @@ export async function closeIntervention(
           if (contract) nextVisit = computeProchaineVisite(intervention.date, contract.periodicite);
         }
       }
+      const movementPlan =
+        deductStock && input.piecesUtilisees.length
+          ? await planStockMovementsFromLines(
+              transaction,
+              db,
+              input.piecesUtilisees,
+              {
+                source: "intervention",
+                parentId: intervention.id,
+                interventionId: intervention.id,
+                motif: `Sortie liée à l’intervention ${intervention.numero}`,
+              },
+            )
+          : null;
+      if (movementPlan) {
+        commitStockMovementPlan(transaction, movementPlan, userId, userName);
+      }
       transaction.update(interventionRef, {
         ...input,
         rapport: input.rapport.trim(),
         nomSignataire: input.nomSignataire.trim(),
         statut: "terminee",
+        stockApplied: deductStock,
         closedAt: serverTimestamp(),
       });
       if (nextVisit) {
@@ -207,9 +242,9 @@ export async function closeIntervention(
       if (intervention.type === "depannage" && resumeElevatorAfterBreakdown) {
         transaction.update(elevatorRef, { statut: "en_service" });
       }
-      // TODO(Phase 6D): create stock movements for the parts used by this intervention.
     });
   } catch (error) {
+    if (error instanceof StockInsufficientError) throw error;
     throw readableError(error);
   }
 }
@@ -219,6 +254,7 @@ export async function setContractStatus(
   status: ContratStatut,
   reason?: string,
 ): Promise<void> {
+  assertOnline();
   const db = getFirebaseDb();
   const contractRef = doc(db, "contrats", contractId);
   try {
@@ -267,6 +303,7 @@ export async function renewContract(
   contract: Contrat,
   userId: string,
 ): Promise<Contrat> {
+  assertOnline();
   const oldStart = asDate(contract.dateDebut);
   const oldEnd = asDate(contract.dateFin);
   const start = new Date(oldEnd.getTime());
@@ -301,6 +338,7 @@ export async function generateContractInvoice(
   contractId: string,
   userId: string,
 ): Promise<TgiDocument> {
+  assertOnline();
   const db = getFirebaseDb();
   const contractRef = doc(db, "contrats", contractId);
   const invoiceId = crypto.randomUUID();

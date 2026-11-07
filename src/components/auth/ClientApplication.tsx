@@ -10,8 +10,12 @@ import { AuthProvider } from "@/context/AuthProvider";
 import { FirestoreDataProvider } from "@/context/FirestoreDataProvider";
 import { DocumentsProvider } from "@/context/DocumentsProvider";
 import { CompanySettingsProvider } from "@/context/CompanySettingsProvider";
+import { StockDataProvider } from "@/context/StockDataProvider";
+import { RecouvrementDataProvider } from "@/context/RecouvrementDataProvider";
+import { OfflineBanner } from "@/components/pwa/OfflineBanner";
 import { AppTopbar } from "@/components/layout/AppTopbar";
 import { ToastProvider } from "@/components/ui/ToastProvider";
+import { InstallPrompt } from "@/components/pwa/InstallPrompt";
 
 function routeAccess(pathname: string): {
   action: PermissionAction;
@@ -33,6 +37,15 @@ function routeAccess(pathname: string): {
   if (pathname.startsWith("/interventions/nouveau")) {
     return { action: "create", resource: "interventions" };
   }
+  if (pathname.startsWith("/stock/inventaire")) {
+    return { action: "create", resource: "stock" };
+  }
+  if (pathname.startsWith("/stock")) {
+    return { action: "read", resource: "stock" };
+  }
+  if (pathname.startsWith("/recouvrement")) {
+    return { action: "read", resource: "collections" };
+  }
   if (pathname.startsWith("/contrats")) return { action: "read", resource: "contracts" };
   if (pathname.startsWith("/parc")) return { action: "read", resource: "elevators" };
   if (pathname.startsWith("/interventions")) return { action: "read", resource: "interventions" };
@@ -49,6 +62,7 @@ function routeAccess(pathname: string): {
 export function ClientApplication({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const isLoginPage = pathname === "/login";
+  const isOfflinePage = pathname === "/offline";
   const sidebarCollapsed = useSyncExternalStore(
     subscribeSidebarPreference,
     getSidebarPreference,
@@ -62,31 +76,37 @@ export function ClientApplication({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthGuard
-      permission={isLoginPage ? undefined : routeAccess(pathname)}
-    >
-      {isLoginPage ? (
+    <>
+      {isOfflinePage ? (
         children
       ) : (
-        <>
-          <Sidebar
-            collapsed={sidebarCollapsed}
-            onToggleCollapsed={toggleSidebar}
-          />
-          <MobileTopbar />
-          <div className={`min-h-screen min-w-0 overflow-x-clip bg-slate-50 pt-16 transition-[padding] duration-200 md:pt-0 motion-reduce:transition-none ${sidebarCollapsed ? "md:pl-[5.25rem]" : "md:pl-64"} print:pl-0 print:pt-0`}>
-            <AppTopbar />
-            <main
-              id="main-content"
-              tabIndex={-1}
-              className="mx-auto min-h-[calc(100vh-4.5rem)] w-full max-w-screen-2xl px-4 py-6 outline-none sm:px-6 md:px-7 md:py-8 xl:px-9 print:min-h-0 print:p-0"
-            >
-              {children}
-            </main>
-          </div>
-        </>
+        <AuthGuard permission={isLoginPage ? undefined : routeAccess(pathname)}>
+          {isLoginPage ? (
+            children
+          ) : (
+            <>
+              <Sidebar
+                collapsed={sidebarCollapsed}
+                onToggleCollapsed={toggleSidebar}
+              />
+              <MobileTopbar />
+              <div className={`min-h-screen min-w-0 overflow-x-clip bg-slate-50 pt-16 transition-[padding] duration-200 md:pt-0 motion-reduce:transition-none ${sidebarCollapsed ? "md:pl-[5.25rem]" : "md:pl-64"} print:pl-0 print:pt-0`}>
+                <OfflineBanner />
+                <AppTopbar />
+                <main
+                  id="main-content"
+                  tabIndex={-1}
+                  className="mx-auto min-h-[calc(100vh-4.5rem)] w-full max-w-screen-2xl px-4 py-6 outline-none sm:px-6 md:px-7 md:py-8 xl:px-9 print:min-h-0 print:p-0"
+                >
+                  {children}
+                </main>
+              </div>
+            </>
+          )}
+        </AuthGuard>
       )}
-    </AuthGuard>
+      {!isOfflinePage ? <InstallPrompt /> : null}
+    </>
   );
 }
 
@@ -109,11 +129,15 @@ export function ClientProviders({ children }: { children: ReactNode }) {
     <ToastProvider>
       <AuthProvider>
         <FirestoreDataProvider>
-          <DocumentsProvider>
-            <CompanySettingsProvider>
-              <ClientApplication>{children}</ClientApplication>
-            </CompanySettingsProvider>
-          </DocumentsProvider>
+          <StockDataProvider>
+            <DocumentsProvider>
+              <RecouvrementDataProvider>
+                <CompanySettingsProvider>
+                  <ClientApplication>{children}</ClientApplication>
+                </CompanySettingsProvider>
+              </RecouvrementDataProvider>
+            </DocumentsProvider>
+          </StockDataProvider>
         </FirestoreDataProvider>
       </AuthProvider>
     </ToastProvider>

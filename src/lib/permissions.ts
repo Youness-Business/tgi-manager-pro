@@ -9,6 +9,12 @@ export type PermissionAction =
   | "approve"
   | "readPurchasePrice"
   | "readMargins"
+  | "readStockMovements"
+  | "recordPayment"
+  | "cancelPayment"
+  | "manageCheque"
+  | "createReminder"
+  | "manageCredit"
   | "manageCompany"
   | "importDemo";
 
@@ -23,6 +29,8 @@ export type PermissionResource =
   | "counters"
   | "stock"
   | "collections"
+  | "payments"
+  | "reminders"
   | "users"
   | "company";
 
@@ -39,6 +47,8 @@ const allResources: readonly PermissionResource[] = [
   "counters",
   "stock",
   "collections",
+  "payments",
+  "reminders",
   "users",
   "company",
 ];
@@ -52,6 +62,13 @@ const ownerPermissions: readonly Permission[] = [
   "approve:*",
   "readPurchasePrice:catalogue",
   "readMargins:catalogue",
+  "readPurchasePrice:stock",
+  "readStockMovements:stock",
+  "recordPayment:payments",
+  "cancelPayment:payments",
+  "manageCheque:payments",
+  "createReminder:reminders",
+  "manageCredit:clients",
   "manageCompany:company",
   "importDemo:company",
 ];
@@ -63,6 +80,11 @@ const dgPermissions: readonly Permission[] = [
   "approve:*",
   "readPurchasePrice:catalogue",
   "readMargins:catalogue",
+  "readPurchasePrice:stock",
+  "readStockMovements:stock",
+  "recordPayment:payments",
+  "manageCheque:payments",
+  "createReminder:reminders",
 ];
 
 const commercialPermissions: readonly Permission[] = [
@@ -71,6 +93,7 @@ const commercialPermissions: readonly Permission[] = [
   "create:clients",
   "update:clients",
   "read:catalogue",
+  "read:stock",
   "read:company",
   "read:documents",
   "create:documents",
@@ -79,6 +102,10 @@ const commercialPermissions: readonly Permission[] = [
   "read:elevators",
   "read:counters",
   "read:interventions",
+  "read:payments",
+  "read:reminders",
+  "createReminder:reminders",
+  "recordPayment:payments",
 ];
 
 const rolePermissions: Record<UserRole, readonly Permission[]> = {

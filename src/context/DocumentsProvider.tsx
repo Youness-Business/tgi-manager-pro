@@ -21,8 +21,14 @@ import {
 } from "react";
 import { useAuth } from "@/context/AuthProvider";
 import { nextDocumentNumberInTransaction } from "@/lib/documentNumber";
+import { computeDiscountedTotals } from "@/lib/computeDiscountedTotals";
 import { getFirebaseDb } from "@/lib/firebase";
+import { assertOnline } from "@/lib/online";
 import { firestoreErrorMessage } from "@/lib/firestoreErrors";
+import {
+  commitStockMovementPlan,
+  planStockMovementsFromLines,
+} from "@/lib/stockTransactions";
 import type {
   DateInput,
   Document,
@@ -35,7 +41,10 @@ type DocumentsContextValue = {
   documents: Document[];
   loading: boolean;
   error: string | null;
-  addDocument: (document: Document) => Promise<Document>;
+  addDocument: (
+    document: Document,
+    options?: { deduireDuStock?: boolean; bonLivraisonId?: string },
+  ) => Promise<Document>;
   clearError: () => void;
 };
 
@@ -56,6 +65,7 @@ const validTypes: readonly DocumentType[] = [
 ];
 const validStatuses: readonly DocumentStatus[] = [
   "en_attente",
+  "partiel",
   "paye",
   "annule",
 ];
@@ -136,14 +146,31 @@ function parseDocument(id: string, source: unknown): Document | null {
     lignes,
     statut: value.statut as DocumentStatus,
   };
+  if (typeof value.stockApplied === "boolean") {
+    document.stockApplied = value.stockApplied;
+  }
+  if (typeof value.bonLivraisonId === "string") {
+    document.bonLivraisonId = value.bonLivraisonId;
+  }
   if (typeof value.remisePct === "number") document.remisePct = value.remisePct;
   if (
     value.modePaiement === "especes" ||
     value.modePaiement === "virement" ||
-    value.modePaiement === "cheque"
+    value.modePaiement === "cheque" ||
+    value.modePaiement === "effet"
   ) {
     document.modePaiement = value.modePaiement;
   }
+  if (typeof value.dateEcheance === "number" || typeof value.dateEcheance === "string" || (isRecord(value.dateEcheance) && typeof value.dateEcheance.toDate === "function") || (isRecord(value.dateEcheance) && typeof value.dateEcheance.seconds === "number")) {
+    document.dateEcheance = parseDate(value.dateEcheance);
+  }
+  if (typeof value.montantPaye === "number" && Number.isFinite(value.montantPaye)) {
+    document.montantPaye = value.montantPaye;
+  }
+  if (typeof value.montantTTC === "number" && Number.isFinite(value.montantTTC)) {
+    document.montantTTC = value.montantTTC;
+  }
+  if (typeof value.paymentId === "string") document.paymentId = value.paymentId;
   if (typeof value.createdBy === "string") document.createdBy = value.createdBy;
   const createdAt = parseDate(value.createdAt);
   if (createdAt) document.createdAt = createdAt;
@@ -162,7 +189,10 @@ function parseDocumentDate(value: DateInput): Date {
 }
 
 export function DocumentsProvider({ children }: { children: ReactNode }) {
-  const { user, profile } = useAuth();
+  const { user, profile, status } = useAuth();
+  const readyUid = status === "ready" ? user?.uid ?? null : null;
+  const readyRole = status === "ready" ? profile?.role ?? null : null;
+  const readyUserName = status === "ready" ? profile?.nom ?? "" : "";
   const [state, setState] = useState<DocumentsState>({
     uid: null,
     documents: [],
@@ -171,13 +201,13 @@ export function DocumentsProvider({ children }: { children: ReactNode }) {
   });
 
   useEffect(() => {
-    if (!user) return;
+    if (!readyUid) return;
     let active = true;
     try {
       const documentsCollection = collection(getFirebaseDb(), "documents");
       const documentsQuery =
-        profile?.role === "commercial"
-          ? query(documentsCollection, where("createdBy", "==", user.uid))
+        readyRole === "commercial"
+          ? query(documentsCollection, where("createdBy", "==", readyUid))
           : documentsCollection;
       const unsubscribe = onSnapshot(
         documentsQuery,
@@ -188,7 +218,7 @@ export function DocumentsProvider({ children }: { children: ReactNode }) {
           );
           if (parsed.some((item) => item === null)) {
             setState({
-              uid: user.uid,
+              uid: readyUid,
               documents: [],
               loading: false,
               error:
@@ -196,7 +226,7 @@ export function DocumentsProvider({ children }: { children: ReactNode }) {
             });
           } else {
             setState({
-              uid: user.uid,
+              uid: readyUid,
               documents: parsed.filter((item): item is Document => item !== null),
               loading: false,
               error: null,
@@ -206,7 +236,7 @@ export function DocumentsProvider({ children }: { children: ReactNode }) {
         (snapshotError) => {
           if (!active) return;
           setState({
-            uid: user.uid,
+            uid: readyUid,
             documents: [],
             loading: false,
             error: firestoreErrorMessage(snapshotError),
@@ -222,7 +252,7 @@ export function DocumentsProvider({ children }: { children: ReactNode }) {
       window.setTimeout(() => {
         if (!active) return;
         setState({
-          uid: user.uid,
+          uid: readyUid,
           documents: [],
           loading: false,
           error: message,
@@ -232,11 +262,15 @@ export function DocumentsProvider({ children }: { children: ReactNode }) {
         active = false;
       };
     }
-  }, [user, profile?.role]);
+  }, [readyUid, readyRole]);
 
   const addDocument = useCallback(
-    async (candidate: Document): Promise<Document> => {
-      if (!user) throw new Error("Vous devez être connecté pour créer un document.");
+    async (
+      candidate: Document,
+      options?: { deduireDuStock?: boolean; bonLivraisonId?: string },
+    ): Promise<Document> => {
+      assertOnline();
+      if (!readyUid) throw new Error("Une session active est nécessaire pour créer un document.");
       const db = getFirebaseDb();
       const documentRef = doc(db, "documents", candidate.id);
       const documentDate = parseDocumentDate(candidate.dateCreation);
@@ -245,6 +279,52 @@ export function DocumentsProvider({ children }: { children: ReactNode }) {
       }
       try {
         const createdDocument = await runTransaction(db, async (transaction) => {
+          if (options?.deduireDuStock && candidate.type !== "facture") {
+            throw new Error("La déduction de stock est réservée aux factures.");
+          }
+          const paymentDelay =
+            candidate.type === "facture"
+              ? await paymentDelayInTransaction(
+                  transaction,
+                  db,
+                  candidate.clientId,
+                )
+              : null;
+          if (options?.bonLivraisonId) {
+            const deliverySnapshot = await transaction.get(
+              doc(db, "documents", options.bonLivraisonId),
+            );
+            if (
+              !deliverySnapshot.exists() ||
+              deliverySnapshot.data().type !== "bon_livraison" ||
+              deliverySnapshot.data().clientId !== candidate.clientId
+            ) {
+              throw new Error(
+                "Le bon de livraison associé est introuvable ou ne correspond pas au client.",
+              );
+            }
+            if (
+              options.deduireDuStock &&
+              deliverySnapshot.data().stockApplied === true
+            ) {
+              throw new Error(
+                "Le stock a déjà été décompté depuis le bon de livraison associé.",
+              );
+            }
+          }
+          const movementPlan = options?.deduireDuStock
+            ? await planStockMovementsFromLines(
+                transaction,
+                db,
+                candidate.lignes,
+                {
+                  source: "document",
+                  parentId: candidate.id,
+                  documentId: candidate.id,
+                  motif: "Déduction de stock lors de la création de facture",
+                },
+              )
+            : null;
           const allocation = await nextDocumentNumberInTransaction(
             transaction,
             db,
@@ -255,8 +335,30 @@ export function DocumentsProvider({ children }: { children: ReactNode }) {
           const nextDocument: Document = {
             ...candidate,
             numero: allocation.numero,
-            createdBy: user.uid,
+            createdBy: readyUid,
+            stockApplied: Boolean(options?.deduireDuStock),
+            ...(candidate.type === "facture"
+              ? {
+                  statut: "en_attente" as const,
+                  montantPaye: 0,
+                  montantTTC: computeDiscountedTotals(
+                    candidate.lignes,
+                    candidate.remisePct,
+                  ).totalTTC,
+                }
+              : {}),
+            ...(options?.bonLivraisonId
+              ? { bonLivraisonId: options.bonLivraisonId }
+              : {}),
           };
+          if (movementPlan) {
+            commitStockMovementPlan(
+              transaction,
+              movementPlan,
+              readyUid,
+              readyUserName,
+            );
+          }
           transaction.set(documentRef, {
             ...nextDocument,
             counterKey: allocation.counterKey,
@@ -264,39 +366,67 @@ export function DocumentsProvider({ children }: { children: ReactNode }) {
             year: allocation.year,
             yearKey: allocation.yearKey,
             dateCreation: Timestamp.fromDate(documentDate),
+            ...(candidate.type === "facture"
+              ? {
+                  dateEcheance: Timestamp.fromDate(
+                    addDays(documentDate, paymentDelay ?? 30),
+                  ),
+                }
+              : {}),
             createdAt: serverTimestamp(),
           });
           return nextDocument;
         });
         setState((current) =>
-          current.uid === user.uid ? { ...current, error: null } : current,
+          current.uid === readyUid ? { ...current, error: null } : current,
         );
         return createdDocument;
       } catch (transactionError) {
         const message = firestoreErrorMessage(transactionError);
         setState((current) =>
-          current.uid === user.uid
+          current.uid === readyUid
             ? { ...current, error: message }
             : current,
         );
         throw new Error(message);
       }
+
+      async function paymentDelayInTransaction(
+        transaction: import("firebase/firestore").Transaction,
+        db: import("firebase/firestore").Firestore,
+        clientId: string,
+      ): Promise<number> {
+        const clientSnapshot = await transaction.get(doc(db, "clients", clientId));
+        if (!clientSnapshot.exists()) throw new Error("Le client sélectionné n’existe plus.");
+        const value = clientSnapshot.data().delaiPaiementJours;
+        if (value === undefined) return 30;
+        if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > 365) {
+          throw new Error("Le délai de paiement du client est invalide.");
+        }
+        return value;
+      }
+
+      function addDays(date: Date, days: number): Date {
+        const result = new Date(date);
+        result.setDate(result.getDate() + days);
+        return result;
+      }
     },
-    [user],
+    [readyUid, readyUserName],
   );
 
   const clearError = useCallback(() => {
-    if (!user) return;
+    if (!readyUid) return;
     setState((current) =>
-      current.uid === user.uid ? { ...current, error: null } : current,
+      current.uid === readyUid ? { ...current, error: null } : current,
     );
-  }, [user]);
-  const isCurrentSession = Boolean(user && state.uid === user.uid);
+  }, [readyUid]);
+  const isCurrentSession = Boolean(readyUid && state.uid === readyUid);
   const documents = useMemo(
     () => (isCurrentSession ? state.documents : []),
     [isCurrentSession, state.documents],
   );
-  const loading = Boolean(user) && (!isCurrentSession || state.loading);
+  const loading = Boolean(readyUid) && (!isCurrentSession || state.loading);
   const error = isCurrentSession ? state.error : null;
   const value = useMemo(
     () => ({ documents, loading, error, addDocument, clearError }),

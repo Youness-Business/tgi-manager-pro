@@ -57,26 +57,21 @@ export function AuthGuard({
 }: AuthGuardProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, role, loading } = useAuth();
+  const { user, role, status } = useAuth();
   const isLoginPage = pathname === "/login";
 
   useEffect(() => {
-    if (!loading && !user && !isLoginPage) {
+    if (status === "loading" || isLoginPage) return;
+    if (status !== "ready" || !user) {
       router.replace(`/login?next=${encodeURIComponent(pathname)}`);
-    } else if (!loading && user && isLoginPage) {
-      const requestedPath = new URLSearchParams(window.location.search).get("next");
-      const safePath =
-        requestedPath?.startsWith("/") && !requestedPath.startsWith("//")
-          ? requestedPath
-          : "/dashboard";
-      router.replace(safePath);
     }
-  }, [loading, user, isLoginPage, pathname, router]);
+  }, [status, user, isLoginPage, pathname, router]);
 
   if (isLoginPage) {
-    return loading || user ? <AccessLoading /> : children;
+    return status === "loading" ? <AccessLoading /> : children;
   }
-  if (loading || !user || !role) return <AccessLoading />;
+  if (status === "loading") return <AccessLoading />;
+  if (status !== "ready" || !user || !role) return <AccessLoading />;
   if (allowedRoles && !allowedRoles.includes(role)) return <AccessDenied />;
   if (permission && !can(role, permission.action, permission.resource)) {
     return <AccessDenied />;

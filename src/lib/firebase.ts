@@ -1,4 +1,4 @@
-import { getApp, getApps, initializeApp, type FirebaseApp } from "firebase/app";
+import { getApps, initializeApp, type FirebaseApp } from "firebase/app";
 import { getAuth, type Auth } from "firebase/auth";
 import { getFirestore, type Firestore } from "firebase/firestore";
 
@@ -46,7 +46,7 @@ function getFirebaseApp(): FirebaseApp {
     appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
   };
 
-  return getApps().length ? getApp() : initializeApp(config);
+  return getApps().find((app) => app.name === "[DEFAULT]") ?? initializeApp(config);
 }
 
 export function getFirebaseAuth(): Auth {

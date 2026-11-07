@@ -9,6 +9,7 @@ export const documentTypeLabels: Record<DocumentType, string> = {
 
 export const documentStatusLabels: Record<DocumentStatus, string> = {
   en_attente: "En attente",
+  partiel: "Partiellement payé",
   paye: "Payé",
   annule: "Annulé",
 };
