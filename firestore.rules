@@ -1,0 +1,294 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function profileExists() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function activeUser() {
+      return profileExists()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.actif == true;
+    }
+
+    function currentRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isOwner() {
+      return activeUser() && currentRole() == 'owner';
+    }
+
+    function isDg() {
+      return activeUser() && currentRole() == 'dg';
+    }
+
+    function isCommercial() {
+      return activeUser() && currentRole() == 'commercial';
+    }
+
+    function canReadAllBusinessData() {
+      return isOwner() || isDg() || isCommercial();
+    }
+
+    function canWriteBusinessData() {
+      return isOwner() || isDg();
+    }
+
+    function validWhitelistProfile(uid) {
+      return request.resource.data.keys().hasAll([
+          'email', 'nom', 'role', 'actif', 'createdAt'
+        ])
+        && request.resource.data.actif == true
+        && request.resource.data.email == request.auth.token.email
+        && (
+          (request.resource.data.email == 'laassas.youness65@gmail.com'
+            && request.resource.data.role == 'owner')
+          || (request.resource.data.email == 'yl.younesslaaassas@gmail.com'
+            && request.resource.data.role == 'commercial')
+          || (request.resource.data.email == 'techniquegi39@gmail.com'
+            && request.resource.data.role == 'dg')
+        );
+    }
+
+    function documentMatchesCounter(counterKey, documentId, sequence) {
+      let documentAfter = getAfter(
+        /databases/$(database)/documents/documents/$(documentId)
+      );
+      return documentAfter.data.counterKey == counterKey
+        && documentAfter.data.sequence == sequence
+        && documentAfter.data.type == request.resource.data.type
+        && documentAfter.data.year == request.resource.data.year
+        && documentAfter.data.createdBy == request.auth.uid;
+    }
+
+    function operationMatchesCounter(counterKey, recordId, sequence) {
+      let counterType = request.resource.data.type;
+      let recordPath = counterType == 'contrat'
+        ? /databases/$(database)/documents/contrats/$(recordId)
+        : /databases/$(database)/documents/interventions/$(recordId);
+      let recordAfter = getAfter(recordPath);
+      return counterType in ['contrat', 'intervention']
+        && recordAfter.data.counterKey == counterKey
+        && recordAfter.data.sequence == sequence
+        && recordAfter.data.counterKind == counterType
+        && recordAfter.data.createdBy == request.auth.uid;
+    }
+
+    function operationRecordMatchesCounter(counterKey, kind, recordId, sequence) {
+      let counterAfter = getAfter(
+        /databases/$(database)/documents/counters/$(counterKey)
+      );
+      return counterAfter.data.sequence == sequence
+        && counterAfter.data.type == kind
+        && counterAfter.data.lastDocumentId == recordId
+        && counterAfter.data.year == request.resource.data.year;
+    }
+
+    function validCounterWrite(counterKey) {
+      let newSequence = request.resource.data.sequence;
+      let lastDocumentId = request.resource.data.lastDocumentId;
+      return request.resource.data.keys().hasAll([
+          'sequence', 'type', 'year', 'yearKey', 'lastDocumentId'
+        ])
+        && newSequence is int
+        && newSequence > 0
+        && request.resource.data.type is string
+        && request.resource.data.year is int
+        && request.resource.data.yearKey is string
+        && counterKey == request.resource.data.type + '_' + request.resource.data.yearKey
+        && (
+          (!exists(/databases/$(database)/documents/counters/$(counterKey))
+            && newSequence == 1)
+          || (exists(/databases/$(database)/documents/counters/$(counterKey))
+            && newSequence == resource.data.sequence + 1)
+        )
+        && (
+          documentMatchesCounter(counterKey, lastDocumentId, newSequence)
+          || operationMatchesCounter(counterKey, lastDocumentId, newSequence)
+        );
+    }
+
+    function validDocumentCounter() {
+      let counterKey = request.resource.data.counterKey;
+      let counterAfter = getAfter(
+        /databases/$(database)/documents/counters/$(counterKey)
+      );
+      return request.resource.data.keys().hasAll([
+          'counterKey', 'sequence', 'createdBy', 'numero', 'type',
+          'clientId', 'lignes', 'statut', 'dateCreation', 'year',
+          'yearKey'
+        ])
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.type in [
+          'facture', 'devis', 'recu', 'bon_livraison'
+        ]
+        && request.resource.data.statut in [
+          'en_attente', 'paye', 'annule'
+        ]
+        && request.resource.data.numero is string
+        && request.resource.data.clientId is string
+        && request.resource.data.lignes is list
+        && request.resource.data.dateCreation is timestamp
+        && request.resource.data.year is int
+        && request.resource.data.yearKey is string
+        && request.resource.data.counterKey
+          == request.resource.data.type + '_' + request.resource.data.yearKey
+        && request.resource.data.sequence is int
+        && (isOwner() || isDg()
+          || (isCommercial()
+            && request.resource.data.type in ['facture', 'devis']))
+        && counterAfter.data.sequence == request.resource.data.sequence
+        && counterAfter.data.type == request.resource.data.type
+        && counterAfter.data.year == request.resource.data.year
+        && counterAfter.data.lastDocumentId == request.resource.id;
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn()
+        && (request.auth.uid == uid || isOwner() || isDg());
+      allow create: if signedIn()
+        && request.auth.uid == uid
+        && validWhitelistProfile(uid);
+      allow update: if isOwner()
+        && (request.auth.uid != uid
+          || request.resource.data.role == resource.data.role);
+      allow delete: if isOwner();
+    }
+
+    match /clients/{clientId} {
+      allow read: if canReadAllBusinessData();
+      allow create: if isOwner() || isDg() || isCommercial();
+      allow update: if isOwner() || isDg() || isCommercial();
+      allow delete: if isOwner();
+    }
+
+    match /articles/{articleId} {
+      allow read: if canReadAllBusinessData()
+        && !resource.data.keys().hasAny(['prixAchatHT']);
+      allow create, update: if canWriteBusinessData()
+        && !request.resource.data.keys().hasAny(['prixAchatHT']);
+      allow delete: if isOwner();
+    }
+
+    match /articleCosts/{articleId} {
+      allow read, create, update: if isOwner() || isDg();
+      allow delete: if isOwner();
+    }
+
+    match /documents/{documentId} {
+      allow read: if isOwner() || isDg()
+        || (isCommercial() && resource.data.createdBy == request.auth.uid);
+      allow create: if (isOwner() || isDg() || isCommercial())
+        && validDocumentCounter();
+      allow update: if isOwner() || isDg()
+        || (isCommercial()
+          && resource.data.createdBy == request.auth.uid
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.numero == resource.data.numero
+          && request.resource.data.type == resource.data.type
+          && request.resource.data.type in ['facture', 'devis']
+          && request.resource.data.counterKey == resource.data.counterKey
+          && request.resource.data.sequence == resource.data.sequence);
+      allow delete: if isOwner();
+    }
+
+    match /counters/{counterKey} {
+      allow read: if canReadAllBusinessData();
+      allow create, update: if (isOwner() || isDg() || isCommercial())
+        && validCounterWrite(counterKey);
+      allow delete: if false;
+    }
+
+    match /settings/company {
+      allow read: if canReadAllBusinessData();
+      allow create, update: if isOwner();
+      allow delete: if isOwner();
+    }
+
+    match /settings/demoImport {
+      allow read, create, update: if isOwner();
+      allow delete: if isOwner();
+    }
+
+    match /contrats/{contractId} {
+      allow read: if canReadAllBusinessData();
+      allow create: if canWriteBusinessData()
+        && request.resource.data.keys().hasAll([
+          'numero', 'clientId', 'ascenseurIds', 'type', 'dateDebut',
+          'dateFin', 'periodicite', 'montantHT', 'visitesParAn',
+          'reconductionAuto', 'statut', 'conditionsParticulieres',
+          'prochaineFacturation', 'counterKind', 'counterKey', 'sequence',
+          'year', 'yearKey', 'createdBy'
+        ])
+        && request.resource.data.counterKind == 'contrat'
+        && (request.resource.data.statut == 'brouillon'
+          || (isOwner() && request.resource.data.statut == 'actif'))
+        && request.resource.data.createdBy == request.auth.uid
+        && operationRecordMatchesCounter(
+          request.resource.data.counterKey,
+          'contrat',
+          contractId,
+          request.resource.data.sequence
+        );
+      allow update: if isOwner()
+        || (isDg()
+          && (resource.data.statut != 'actif'
+            || request.resource.data.montantHT == resource.data.montantHT));
+      allow delete: if isOwner();
+    }
+
+    match /ascenseurs/{elevatorId} {
+      allow read: if canReadAllBusinessData();
+      allow create, update: if canWriteBusinessData();
+      allow delete: if isOwner();
+    }
+
+    match /interventions/{interventionId} {
+      allow read: if canReadAllBusinessData();
+      allow create: if canWriteBusinessData()
+        && request.resource.data.keys().hasAll([
+          'numero', 'ascenseurId', 'type', 'date', 'technicien',
+          'rapport', 'piecesUtilisees', 'statut', 'duree',
+          'signatureClient', 'nomSignataire', 'counterKind',
+          'counterKey', 'sequence', 'year', 'yearKey', 'createdBy'
+        ])
+        && request.resource.data.counterKind == 'intervention'
+        && request.resource.data.createdBy == request.auth.uid
+        && operationRecordMatchesCounter(
+          request.resource.data.counterKey,
+          'intervention',
+          interventionId,
+          request.resource.data.sequence
+        );
+      allow update: if canWriteBusinessData();
+      allow delete: if isOwner();
+    }
+
+    match /stockMovements/{movementId} {
+      allow read: if isOwner() || isDg();
+      allow create, update: if isOwner() || isDg();
+      allow delete: if isOwner();
+    }
+
+    match /paiements/{paymentId} {
+      allow read: if isOwner() || isDg();
+      allow create, update: if isOwner() || isDg();
+      allow delete: if isOwner();
+    }
+
+    match /relances/{reminderId} {
+      allow read: if isOwner() || isDg();
+      allow create, update: if isOwner() || isDg();
+      allow delete: if isOwner();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
