@@ -1,8 +1,7 @@
 "use client";
 
 import { ArrowLeft, FileText } from "lucide-react";
-import Link from "next/link";
-import { notFound } from "next/navigation";
+import Link from "@/lib/router";
 import { useMemo, useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
@@ -51,7 +50,6 @@ export function ClientDetailsView({ id }: { id: string }) {
   const clientBalance = clientInvoices.reduce((sum, invoice) => sum + computeSolde(invoice, paiements), 0);
   const overdueBalance = clientInvoices.reduce((sum, invoice) => (getRetardJours(invoice.dateEcheance) ?? 0) > 0 ? sum + computeSolde(invoice, paiements) : sum, 0);
   const latestReminder = [...relances].filter((reminder) => reminder.clientId === id).sort((a, b) => dateValue(b.date) - dateValue(a.date))[0];
-  if (!client && !loading && !error) notFound();
   if (!client) {
     return (
       <p role={error || documentsError ? "alert" : "status"} className="rounded-xl border border-gray-200 bg-white p-5 text-sm text-slate-700 shadow-sm">

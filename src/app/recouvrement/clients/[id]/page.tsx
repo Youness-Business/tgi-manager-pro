@@ -1,14 +1,7 @@
-import type { Metadata } from "next";
 import { ClientReceivables } from "@/components/recouvrement/ClientReceivables";
+import { useParams } from "@/lib/router";
 
-export const metadata: Metadata = {
-  title: "Relevé de compte",
-  description: "Créances, paiements et relances du client.",
-};
-
-export default async function ClientReceivablesPage({
-  params,
-}: PageProps<"/recouvrement/clients/[id]">) {
-  const { id } = await params;
+export default function ClientReceivablesPage() {
+  const { id = "" } = useParams<{ id: string }>();
   return <ClientReceivables id={id} />;
 }

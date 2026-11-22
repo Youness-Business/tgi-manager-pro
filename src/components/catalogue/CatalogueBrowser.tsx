@@ -1,7 +1,7 @@
 "use client";
 
 import { BadgeCheck, PackagePlus, Pencil, Search as SearchIcon } from "lucide-react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter } from "@/lib/router";
 import { useState } from "react";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { Button } from "@/components/ui/primitives";

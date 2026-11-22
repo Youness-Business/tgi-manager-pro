@@ -1,11 +1,5 @@
-import Link from "next/link";
+import Link from "@/lib/router";
 import { FileQuestion } from "lucide-react";
-import type { Metadata } from "next";
-
-export const metadata: Metadata = {
-  title: "Page introuvable",
-  description: "La page demandée n’existe pas ou n’est plus disponible.",
-};
 
 export default function NotFound() {
   return (

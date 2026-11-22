@@ -1,14 +1,9 @@
 import { ArrowLeft } from "lucide-react";
-import Link from "next/link";
+import Link from "@/lib/router";
 import { Suspense } from "react";
-import type { Metadata } from "next";
 import { DocumentGenerator } from "@/components/documents/DocumentGenerator";
 import { PageHeader } from "@/components/ui/PageHeader";
 
-export const metadata: Metadata = {
-  title: "Nouveau document",
-  description: "Créer une facture, un devis, un reçu ou un bon de livraison.",
-};
 
 export const instant = false;
 

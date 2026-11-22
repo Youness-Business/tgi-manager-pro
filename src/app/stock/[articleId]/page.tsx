@@ -1,16 +1,9 @@
-import type { Metadata } from "next";
 import { StockArticleDetails } from "@/components/stock/StockArticleDetails";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { useParams } from "@/lib/router";
 
-export const metadata: Metadata = {
-  title: "Fiche stock",
-  description: "Détail des quantités et mouvements d’un article.",
-};
-
-export default async function StockArticlePage({
-  params,
-}: PageProps<"/stock/[articleId]">) {
-  const { articleId } = await params;
+export default function StockArticlePage() {
+  const { articleId = "" } = useParams<{ articleId: string }>();
   return (
     <div className="space-y-6">
       <PageHeader

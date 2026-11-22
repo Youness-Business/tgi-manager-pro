@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, type FormEvent } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "@/lib/router";
 import { useAuth } from "@/context/AuthProvider";
 import { useClients } from "@/context/FirestoreDataProvider";
 import { useAscenseurs, useContrats } from "@/context/OperationsDataProvider";

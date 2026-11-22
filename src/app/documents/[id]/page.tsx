@@ -1,24 +1,9 @@
 import { Suspense } from "react";
-import type { Metadata } from "next";
 import { DocumentDetails } from "@/components/documents/DocumentDetails";
+import { useParams } from "@/lib/router";
 
-export const metadata: Metadata = {
-  title: "Document",
-  description: "Détail et aperçu imprimable d’un document TGI Ascenseurs.",
-};
-
-type DocumentDetailsPageProps = {
-  params: Promise<{ id: string }>;
-};
-
-export const instant = false;
-
-async function DocumentDetailsContent({ params }: DocumentDetailsPageProps) {
-  const { id } = await params;
-  return <DocumentDetails id={id} />;
-}
-
-export default function DocumentDetailsPage(props: DocumentDetailsPageProps) {
+export default function DocumentDetailsPage() {
+  const { id = "" } = useParams<{ id: string }>();
   return (
     <Suspense
       fallback={
@@ -30,7 +15,7 @@ export default function DocumentDetailsPage(props: DocumentDetailsPageProps) {
         </div>
       }
     >
-      <DocumentDetailsContent {...props} />
+      <DocumentDetails id={id} />
     </Suspense>
   );
 }

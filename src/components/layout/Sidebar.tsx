@@ -14,8 +14,8 @@ import {
   UsersRound,
   Banknote,
 } from "lucide-react";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import Link from "@/lib/router";
+import { usePathname } from "@/lib/router";
 import { useState } from "react";
 import { useAuth } from "@/context/AuthProvider";
 import { useArticles } from "@/context/FirestoreDataProvider";

@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/lib/router";
 import { useMemo } from "react";
 import { ArrowLeft, Printer } from "lucide-react";
 import { BonIntervention } from "@/components/documents/BonIntervention";

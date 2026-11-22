@@ -1,16 +1,7 @@
-import type { Metadata } from "next";
 import { InterventionRecord } from "@/components/interventions/InterventionRecord";
+import { useParams } from "@/lib/router";
 
-export const metadata: Metadata = {
-  title: "Bon d’intervention",
-  description: "Impression d’un bon d’intervention TGI.",
-};
-
-export default async function InterventionPrintPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id } = await params;
+export default function InterventionPrintPage() {
+  const { id = "" } = useParams<{ id: string }>();
   return <InterventionRecord id={id} printable />;
 }

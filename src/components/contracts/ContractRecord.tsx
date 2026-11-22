@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/lib/router";
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/lib/router";
 import { ArrowLeft, Ban, Check, FilePlus2, Printer, RefreshCw } from "lucide-react";
 import { ContratMaintenance } from "@/components/documents/ContratMaintenance";
 import { useAuth } from "@/context/AuthProvider";

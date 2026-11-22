@@ -1,11 +1,6 @@
-import type { Metadata } from "next";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
 
-export const metadata: Metadata = {
-  title: "Paramètres",
-  description: "Paramètres de société, comptes autorisés et import de données.",
-};
 
 export default function SettingsPage() {
   return (

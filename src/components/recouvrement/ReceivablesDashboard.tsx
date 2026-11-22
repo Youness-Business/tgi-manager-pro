@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/lib/router";
 import { AlertCircle, ArrowRight, Banknote, CalendarClock, FileClock, Percent, UsersRound } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";

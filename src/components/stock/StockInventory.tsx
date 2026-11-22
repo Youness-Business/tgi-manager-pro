@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/lib/router";
 import { ClipboardCheck, PackageSearch } from "lucide-react";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Button, Input } from "@/components/ui/primitives";

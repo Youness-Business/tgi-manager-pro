@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "@/lib/router";
 import {
   ArrowRight,
   CheckCircle2,
@@ -58,7 +58,7 @@ export function LoginForm() {
     }
   }
 
-  const nextPath = searchParams.get("next");
+  const nextPath = searchParams.get("@/types/metadata");
   const safeNextPath =
     nextPath?.startsWith("/") && !nextPath.startsWith("//")
       ? nextPath
@@ -141,7 +141,7 @@ export function LoginForm() {
                 </p>
               ) : null}
               {switchError ? <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{switchError}</p> : null}
-              <input type="hidden" name="next" value={safeNextPath} />
+              <input type="hidden" name="@/types/metadata" value={safeNextPath} />
               <button
                 type="submit"
                 disabled={isSigningIn || status === "loading"}
@@ -159,7 +159,7 @@ export function LoginForm() {
               </p>
             </form>
           </div>
-          {process.env.NODE_ENV !== "production" ? (
+          {import.meta.env.DEV ? (
             <details className="mt-4 rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600">
               <summary className="cursor-pointer font-semibold text-slate-700">Diagnostic Firebase</summary>
               <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">

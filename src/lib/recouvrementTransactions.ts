@@ -435,7 +435,7 @@ export async function changerStatutPaiement(
 export async function enregistrerRelance(
   reminder: Omit<Relance, "id" | "date" | "userId">,
   userId: string,
-  reminderId = crypto.randomUUID(),
+  reminderId: string = crypto.randomUUID(),
 ): Promise<string> {
   assertOnline();
   if (!reminder.clientId || !reminder.documentIds.length || !reminder.note.trim()) {

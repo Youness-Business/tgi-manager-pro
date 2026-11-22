@@ -21,7 +21,7 @@ import {
   useReducer,
   type ReactNode,
 } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/lib/router";
 import { useToast } from "@/components/ui/ToastProvider";
 import { isEmailAllowed } from "@/config/access";
 import {
@@ -73,7 +73,7 @@ function readableAuthError(error: unknown): string {
     "auth/operation-not-allowed": "La connexion Google n’est pas activée dans Firebase Authentication → Sign-in method.",
     "auth/network-request-failed": "Connexion réseau impossible. Vérifiez votre accès à Internet puis réessayez.",
     "auth/internal-error": "Firebase Authentication a rencontré une erreur interne. Réessayez dans quelques instants.",
-    "auth/invalid-api-key": "La configuration Firebase est invalide. Vérifiez les variables NEXT_PUBLIC_FIREBASE_*.",
+    "auth/invalid-api-key": "La configuration Firebase est invalide. Vérifiez les variables VITE_FIREBASE_* dans .env.local.",
     "permission-denied": "Accès au profil Firestore refusé. Vérifiez les règles déployées, le rôle et l’état actif du compte.",
     "firestore/permission-denied": "Accès au profil Firestore refusé. Vérifiez les règles déployées, le rôle et l’état actif du compte.",
   };

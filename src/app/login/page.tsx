@@ -1,11 +1,6 @@
-import type { Metadata } from "next";
 import { Suspense } from "react";
 import { LoginForm } from "@/components/auth/LoginForm";
 
-export const metadata: Metadata = {
-  title: "Connexion",
-  description: "Connexion sécurisée à l’espace de gestion TGI Ascenseurs.",
-};
 
 export default function LoginPage() {
   return (

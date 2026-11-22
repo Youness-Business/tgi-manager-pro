@@ -1,7 +1,7 @@
 "use client";
 
 import { useSyncExternalStore, type ReactNode } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname } from "@/lib/router";
 import { AuthGuard } from "@/components/auth/AuthGuard";
 import { MobileTopbar } from "@/components/layout/MobileTopbar";
 import { Sidebar } from "@/components/layout/Sidebar";

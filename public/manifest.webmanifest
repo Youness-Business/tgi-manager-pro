@@ -1,0 +1,21 @@
+{
+  "name": "TGI Ascenseurs – Manager Pro",
+  "short_name": "TGI",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#0B0F19",
+  "background_color": "#0B0F19",
+  "lang": "fr",
+  "dir": "ltr",
+  "categories": ["business", "productivity"],
+  "icons": [
+    { "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Nouvelle facture", "short_name": "Facture", "url": "/documents/nouveau?type=facture", "icons": [{ "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml" }] },
+    { "name": "Recouvrement", "short_name": "Recouvrement", "url": "/recouvrement", "icons": [{ "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml" }] }
+  ]
+}

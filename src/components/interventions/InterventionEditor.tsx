@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "@/lib/router";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/ToastProvider";
 import { useAuth } from "@/context/AuthProvider";

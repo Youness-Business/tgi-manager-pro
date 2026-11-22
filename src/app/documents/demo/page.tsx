@@ -1,12 +1,7 @@
-import Link from "next/link";
-import type { Metadata } from "next";
+import Link from "@/lib/router";
 import { Facture } from "@/components/documents/Facture";
 import type { Client, Document } from "@/types";
 
-export const metadata: Metadata = {
-  title: "Démonstration de facture",
-  description: "Aperçu de démonstration d’un document TGI Ascenseurs.",
-};
 
 const client: Client = {
   id: "client-demo",

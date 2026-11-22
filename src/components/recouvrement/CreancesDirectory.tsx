@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter } from "@/lib/router";
 import { CircleDollarSign, Download, MessageSquareText, Wallet } from "lucide-react";
-import Link from "next/link";
+import Link from "@/lib/router";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Button } from "@/components/ui/primitives";

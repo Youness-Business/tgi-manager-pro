@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter } from "@/lib/router";
 import { useEffect, type ReactNode } from "react";
 import { useAuth } from "@/context/AuthProvider";
 import { can, type PermissionAction, type PermissionResource } from "@/lib/permissions";

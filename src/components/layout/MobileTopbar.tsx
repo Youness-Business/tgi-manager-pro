@@ -1,7 +1,7 @@
 "use client";
 
 import { Menu, Search, X } from "lucide-react";
-import Link from "next/link";
+import Link from "@/lib/router";
 import { Suspense } from "react";
 import { useEffect, useRef, useState } from "react";
 import { Sidebar } from "./Sidebar";

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/lib/router";
 import { Button, Field, Input, Select } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/ToastProvider";
 import { useClients } from "@/context/FirestoreDataProvider";

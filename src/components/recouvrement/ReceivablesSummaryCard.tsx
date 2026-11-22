@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import Link from "next/link";
+import Link from "@/lib/router";
 import { ArrowUpRight, CircleDollarSign, Clock3 } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { useCreances } from "@/context/RecouvrementDataProvider";

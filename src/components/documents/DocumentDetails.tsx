@@ -1,8 +1,7 @@
 "use client";
 
 import { ArrowLeft, Printer } from "lucide-react";
-import Link from "next/link";
-import { notFound } from "next/navigation";
+import Link from "@/lib/router";
 import { useState } from "react";
 import { useAuth } from "@/context/AuthProvider";
 import { DocumentRenderer } from "@/components/documents/DocumentRenderer";
@@ -50,7 +49,6 @@ export function DocumentDetails({ id }: { id: string }) {
         </section>
       );
     }
-    notFound();
   }
   if (!document || !client) {
     return (
@@ -58,7 +56,7 @@ export function DocumentDetails({ id }: { id: string }) {
         role={error || clientsError ? "alert" : "status"}
         className="rounded-xl border border-gray-200 bg-white p-5 text-sm text-slate-700 shadow-sm print:hidden"
       >
-        {error ?? clientsError ?? "Chargement du document…"}
+        {error ?? clientsError ?? (loading || clientsLoading ? "Chargement du document…" : "Document introuvable.")}
       </p>
     );
   }

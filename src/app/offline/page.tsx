@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/lib/router";
 import { WifiOff } from "lucide-react";
 import { OfflineRetryButton } from "@/components/pwa/OfflineRetryButton";
 

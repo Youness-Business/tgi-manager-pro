@@ -10,7 +10,7 @@ export function RegisterServiceWorker() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (process.env.NODE_ENV !== "production" || !("serviceWorker" in navigator)) return;
+    if (!import.meta.env.PROD || !("serviceWorker" in navigator)) return;
     let active = true;
     const handleControllerChange = () => window.location.reload();
 

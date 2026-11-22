@@ -1,16 +1,7 @@
-import type { Metadata } from "next";
 import { ContractRecord } from "@/components/contracts/ContractRecord";
+import { useParams } from "@/lib/router";
 
-export const metadata: Metadata = {
-  title: "Imprimer le contrat",
-  description: "Impression d’un contrat TGI.",
-};
-
-export default async function ContractPrintPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id } = await params;
+export default function ContractPrintPage() {
+  const { id = "" } = useParams<{ id: string }>();
   return <ContractRecord id={id} printable />;
 }

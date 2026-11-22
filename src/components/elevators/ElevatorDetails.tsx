@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/lib/router";
 import { useMemo, useState } from "react";
 import { ArrowLeft, CalendarClock, FilePlus2, Pencil, Wrench } from "lucide-react";
 import { useClients } from "@/context/FirestoreDataProvider";

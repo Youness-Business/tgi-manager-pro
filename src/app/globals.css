@@ -23,6 +23,11 @@
   margin: 12mm;
 }
 
+:root {
+  --font-inter: "Inter", sans-serif;
+  --font-jakarta: "Plus Jakarta Sans", sans-serif;
+}
+
 * {
   box-sizing: border-box;
 }

@@ -1,11 +1,6 @@
-import type { Metadata } from "next";
 import { StockInventory } from "@/components/stock/StockInventory";
 import { PageHeader } from "@/components/ui/PageHeader";
 
-export const metadata: Metadata = {
-  title: "Inventaire",
-  description: "Saisie des quantités physiques et ajustement atomique du stock.",
-};
 
 export default function StockInventoryPage() {
   return (

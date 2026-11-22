@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/lib/router";
 import { useMemo } from "react";
 import { Card } from "@/components/ui/Card";
 import { formatMoney } from "@/lib/formatMoney";

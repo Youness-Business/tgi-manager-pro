@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, type FormEvent } from "react";
-import Link from "next/link";
+import Link from "@/lib/router";
 import { ArrowLeft, FileText, Printer, Wallet } from "lucide-react";
 import { PaymentDialog } from "@/components/recouvrement/PaymentDialog";
 import { ReminderDialog } from "@/components/recouvrement/ReminderDialog";

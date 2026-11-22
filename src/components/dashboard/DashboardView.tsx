@@ -8,7 +8,7 @@ import {
   UsersRound,
   Boxes,
 } from "lucide-react";
-import Link from "next/link";
+import Link from "@/lib/router";
 import { Suspense, useMemo } from "react";
 import { useAuth } from "@/context/AuthProvider";
 import { useDocuments } from "@/context/DocumentsProvider";

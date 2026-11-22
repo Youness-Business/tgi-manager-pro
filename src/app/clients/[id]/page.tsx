@@ -1,23 +1,9 @@
 import { Suspense } from "react";
-import type { Metadata } from "next";
 import { ClientDetailsView } from "@/components/clients/ClientDetailsView";
+import { useParams } from "@/lib/router";
 
-type ClientDetailsPageProps = {
-  params: Promise<{ id: string }>;
-};
-
-export const instant = false;
-export const metadata: Metadata = {
-  title: "Fiche client",
-  description: "Coordonnées et historique des documents du client.",
-};
-
-async function ClientDetailsContent({ params }: ClientDetailsPageProps) {
-  const { id } = await params;
-  return <ClientDetailsView id={id} />;
-}
-
-export default function ClientDetailsPage(props: ClientDetailsPageProps) {
+export default function ClientDetailsPage() {
+  const { id = "" } = useParams<{ id: string }>();
   return (
     <Suspense
       fallback={
@@ -29,7 +15,7 @@ export default function ClientDetailsPage(props: ClientDetailsPageProps) {
         </div>
       }
     >
-      <ClientDetailsContent {...props} />
+      <ClientDetailsView id={id} />
     </Suspense>
   );
 }

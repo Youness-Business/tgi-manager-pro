@@ -1,8 +1,8 @@
 "use client";
 
 import { FilePlus2, Search } from "lucide-react";
-import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import Link from "@/lib/router";
+import { usePathname, useRouter } from "@/lib/router";
 import { useMemo, useState } from "react";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { EmptyState } from "@/components/ui/EmptyState";

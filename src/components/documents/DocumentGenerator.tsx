@@ -7,7 +7,7 @@ import {
   type FormEvent,
   type KeyboardEvent,
 } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "@/lib/router";
 import { Minus, Plus, Printer, Search, Trash2 } from "lucide-react";
 import { DocumentRenderer } from "@/components/documents/DocumentRenderer";
 import { Card } from "@/components/ui/Card";

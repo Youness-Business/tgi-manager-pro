@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter } from "@/lib/router";
 import { ArrowDownToLine, ClipboardList, PackageSearch, Plus } from "lucide-react";
-import Link from "next/link";
+import Link from "@/lib/router";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { StatCard } from "@/components/ui/StatCard";

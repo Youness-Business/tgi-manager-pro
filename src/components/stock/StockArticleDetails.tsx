@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/lib/router";
 import { useMemo, useState, type FormEvent } from "react";
 import { ArrowLeft, ArrowUpRight, Boxes, Minus, Plus, SlidersHorizontal } from "lucide-react";
 import { EmptyState } from "@/components/ui/EmptyState";

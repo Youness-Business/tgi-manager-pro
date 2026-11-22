@@ -1,11 +1,8 @@
 const CACHE_VERSION = "tgi-manager-shell-v1";
 const PRECACHE_URLS = [
-  "/offline",
-  "/icons/icon-192.png",
-  "/icons/icon-512.png",
-  "/icons/icon-512-maskable.png",
-  "/icons/favicon.png",
-  "/apple-icon.png",
+  "/offline.html",
+  "/icons/icon.svg",
+  "/logo.png.jpeg",
 ];
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
@@ -45,14 +42,14 @@ self.addEventListener("fetch", (event) => {
   if (request.mode === "navigate") {
     event.respondWith(
       fetch(request).catch(async () => {
-        const offline = await caches.match("/offline");
+        const offline = await caches.match("/offline.html");
         return offline || Response.error();
       }),
     );
     return;
   }
 
-  if (url.pathname.startsWith("/_next/static/") || request.destination === "font") {
+  if (url.pathname.startsWith("/assets/") || request.destination === "font") {
     event.respondWith(cacheFirst(request, STATIC_CACHE));
     return;
   }
